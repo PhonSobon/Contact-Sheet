@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Contact Sheet — PDF ⇄ Image Converter</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#14161b;
+    --panel:#1c1f26;
+    --panel-raised:#232630;
+    --paper:#ece9e1;
+    --paper-dim:#c9c6bd;
+    --amber:#ff9f1c;
+    --amber-dim:#8a5b17;
+    --teal:#2fd3b3;
+    --line:#343842;
+    --line-soft:#2a2d36;
+    --text:#eceef1;
+    --text-muted:#8a8f98;
+    --danger:#ff6b6b;
+    --radius:2px;
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--ink);
+    color:var(--text);
+    font-family:'Inter',sans-serif;
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+  }
+  ::selection{background:var(--amber);color:#14161b;}
+
+  a{color:var(--amber);}
+
+  .mono{font-family:'IBM Plex Mono',monospace;}
+
+  /* ---------- layout shell ---------- */
+  .wrap{
+    max-width:1040px;
+    margin:0 auto;
+    padding:0 24px 96px;
+  }
+
+  header.top{
+    padding:56px 0 40px;
+    border-bottom:1px solid var(--line-soft);
+    margin-bottom:48px;
+  }
+  .eyebrow{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12px;
+    letter-spacing:.18em;
+    text-transform:uppercase;
+    color:var(--amber);
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin-bottom:18px;
+  }
+  .eyebrow::before{
+    content:"";
+    width:7px;height:7px;
+    background:var(--amber);
+    border-radius:50%;
+    box-shadow:0 0 0 3px rgba(255,159,28,.18);
+  }
+  h1{
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:700;
+    font-size:clamp(36px,6vw,58px);
+    line-height:1.02;
+    letter-spacing:-.02em;
+    margin:0 0 16px;
+  }
+  h1 span{color:var(--amber);}
+  .lede{
+    max-width:560px;
+    color:var(--text-muted);
+    font-size:16px;
+    line-height:1.6;
+    margin:0;
+  }
+
+  /* ---------- mode switch (film-strip tabs) ---------- */
+  .switch{
+    display:flex;
+    gap:2px;
+    margin:36px 0 40px;
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    overflow:hidden;
+    width:fit-content;
+  }
+  .switch button{
+    appearance:none;
+    border:none;
+    background:var(--panel);
+    color:var(--text-muted);
+    font-family:'IBM Plex Mono',monospace;
+    font-size:13px;
+    letter-spacing:.04em;
+    padding:14px 22px;
+    cursor:pointer;
+    transition:background .15s ease, color .15s ease;
+    display:flex;
+    align-items:center;
+    gap:10px;
+  }
+  .switch button .num{color:var(--text-muted);opacity:.5;}
+  .switch button:hover{background:var(--panel-raised);color:var(--text);}
+  .switch button.active{background:var(--amber);color:#14161b;}
+  .switch button.active .num{color:#14161b;opacity:.55;}
+  .switch button:focus-visible{outline:2px solid var(--teal);outline-offset:-2px;}
+
+  section.panel{display:none;}
+  section.panel.active{display:block;animation:fadeUp .35s ease;}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
+
+  /* ---------- frame (the signature sprocket element) ---------- */
+  .frame{
+    position:relative;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:28px 40px;
+    overflow:hidden;
+  }
+  .sprockets{
+    position:absolute;
+    top:0; bottom:0;
+    width:26px;
+    display:flex;
+    flex-direction:column;
+    justify-content:space-evenly;
+    padding:10px 0;
+  }
+  .sprockets.left{left:0;}
+  .sprockets.right{right:0;}
+  .sprockets span{
+    width:8px;height:8px;
+    margin:0 auto;
+    background:var(--ink);
+    border:1px solid var(--line);
+    border-radius:1px;
+  }
+
+  .scanline{
+    position:absolute;
+    left:0; right:0; top:0;
+    height:3px;
+    background:linear-gradient(90deg, transparent, var(--amber), transparent);
+    box-shadow:0 0 16px 2px rgba(255,159,28,.7);
+    opacity:0;
+    pointer-events:none;
+  }
+  .scanline.active{
+    opacity:1;
+    animation:sweep 1.3s ease-in-out infinite;
+  }
+  @keyframes sweep{
+    0%{top:0;}
+    50%{top:calc(100% - 3px);}
+    100%{top:0;}
+  }
+
+  /* ---------- dropzone ---------- */
+  .dropzone{
+    border:1.5px dashed var(--line);
+    border-radius:var(--radius);
+    padding:52px 24px;
+    text-align:center;
+    cursor:pointer;
+    transition:border-color .15s ease, background .15s ease;
+    background:rgba(255,255,255,.01);
+  }
+  .dropzone:hover, .dropzone.drag{
+    border-color:var(--amber);
+    background:rgba(255,159,28,.05);
+  }
+  .dropzone:focus-visible{outline:2px solid var(--teal);outline-offset:2px;}
+  .dropzone .glyph{
+    font-family:'Space Grotesk',sans-serif;
+    font-size:34px;
+    color:var(--amber);
+    margin-bottom:14px;
+    line-height:1;
+  }
+  .dropzone .primary{
+    font-size:16px;
+    font-weight:500;
+    margin-bottom:6px;
+  }
+  .dropzone .secondary{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12px;
+    color:var(--text-muted);
+  }
+  input[type=file]{display:none;}
+
+  /* ---------- controls row ---------- */
+  .controls{
+    display:flex;
+    flex-wrap:wrap;
+    gap:24px;
+    align-items:flex-end;
+    margin-top:24px;
+    padding-top:24px;
+    border-top:1px solid var(--line-soft);
+  }
+  .field{display:flex;flex-direction:column;gap:8px;}
+  .field label{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    letter-spacing:.1em;
+    text-transform:uppercase;
+    color:var(--text-muted);
+  }
+  .field select{
+    background:var(--ink);
+    color:var(--text);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:10px 12px;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:13px;
+    min-width:120px;
+    cursor:pointer;
+  }
+  .field select:focus-visible{outline:2px solid var(--teal);}
+
+  .spacer{flex:1;}
+
+  button.primary-btn{
+    appearance:none;
+    border:none;
+    background:var(--amber);
+    color:#14161b;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:13px;
+    font-weight:500;
+    letter-spacing:.04em;
+    padding:14px 28px;
+    border-radius:var(--radius);
+    cursor:pointer;
+    transition:transform .1s ease, background .15s ease;
+    text-transform:uppercase;
+  }
+  button.primary-btn:hover:not(:disabled){background:#ffb04d;}
+  button.primary-btn:active:not(:disabled){transform:scale(.98);}
+  button.primary-btn:disabled{background:var(--amber-dim);color:rgba(20,22,27,.6);cursor:not-allowed;}
+  button.primary-btn:focus-visible{outline:2px solid var(--teal);outline-offset:2px;}
+
+  button.ghost-btn{
+    appearance:none;
+    background:transparent;
+    border:1px solid var(--line);
+    color:var(--text-muted);
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12px;
+    padding:8px 14px;
+    border-radius:var(--radius);
+    cursor:pointer;
+    transition:border-color .15s ease, color .15s ease;
+  }
+  button.ghost-btn:hover{border-color:var(--text);color:var(--text);}
+  button.ghost-btn:focus-visible{outline:2px solid var(--teal);}
+
+  /* ---------- status / error ---------- */
+  .status-line{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12px;
+    color:var(--text-muted);
+    margin-top:16px;
+    min-height:16px;
+  }
+  .status-line.error{color:var(--danger);}
+  .status-line.ok{color:var(--teal);}
+
+  /* ---------- results ---------- */
+  .results{margin-top:40px;}
+  .results-head{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:12px;
+    margin-bottom:20px;
+  }
+  .results-head h2{
+    font-family:'Space Grotesk',sans-serif;
+    font-size:20px;
+    margin:0;
+  }
+  .results-meta{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12px;
+    color:var(--text-muted);
+  }
+
+  .grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(180px,1fr));
+    gap:18px;
+  }
+  .print-card{
+    background:var(--paper);
+    border-radius:var(--radius);
+    overflow:hidden;
+    color:#14161b;
+    position:relative;
+  }
+  .print-card .sprocket-strip{
+    display:flex;
+    justify-content:space-evenly;
+    padding:5px 6px;
+    background:#d8d4c8;
+  }
+  .print-card .sprocket-strip span{
+    width:5px;height:5px;
+    background:var(--ink);
+    border-radius:50%;
+  }
+  .print-card img{
+    display:block;
+    width:100%;
+    aspect-ratio:3/4;
+    object-fit:cover;
+    background:#fff;
+  }
+  .print-caption{
+    padding:10px 12px 12px;
+  }
+  .print-caption .fname{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    word-break:break-all;
+    display:block;
+    margin-bottom:4px;
+  }
+  .print-caption .meta{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:10px;
+    color:#5c5a52;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+  }
+  .print-caption a{
+    color:#14161b;
+    text-decoration:none;
+    border-bottom:1px solid var(--amber-dim);
+  }
+  .print-caption a:hover{border-color:var(--amber);}
+
+  /* ---------- filmstrip (images -> pdf staged list) ---------- */
+  .filmstrip{
+    display:flex;
+    flex-wrap:wrap;
+    gap:14px;
+    margin-top:24px;
+  }
+  .film-item{
+    width:120px;
+    background:var(--panel-raised);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    overflow:hidden;
+  }
+  .film-item .thumb-wrap{
+    width:100%;
+    aspect-ratio:3/4;
+    background:#0d0e11;
+    display:flex;align-items:center;justify-content:center;
+    overflow:hidden;
+  }
+  .film-item img{width:100%;height:100%;object-fit:cover;}
+  .film-item .film-foot{
+    padding:8px;
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+  }
+  .film-item .film-name{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:10px;
+    color:var(--text-muted);
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .film-item .film-order{
+    display:flex;
+    gap:4px;
+  }
+  .film-item .film-order button{
+    flex:1;
+    background:var(--ink);
+    border:1px solid var(--line);
+    color:var(--text-muted);
+    font-family:'IBM Plex Mono',monospace;
+    font-size:10px;
+    padding:4px 0;
+    cursor:pointer;
+    border-radius:1px;
+  }
+  .film-item .film-order button:hover{color:var(--text);border-color:var(--text-muted);}
+  .film-item .film-order button.remove:hover{color:var(--danger);border-color:var(--danger);}
+
+  /* ---------- empty note ---------- */
+  .hint{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    color:var(--text-muted);
+    margin-top:10px;
+  }
+
+  /* ---------- footer ---------- */
+  footer{
+    margin-top:64px;
+    padding-top:24px;
+    border-top:1px solid var(--line-soft);
+    color:var(--text-muted);
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    display:flex;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:8px;
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    .scanline.active{animation:none;opacity:1;}
+    section.panel.active{animation:none;}
+  }
+
+  @media (max-width:640px){
+    .frame{padding:24px 30px;}
+    .controls{gap:16px;}
+    .field select{min-width:100px;}
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <header class="top">
+    <div class="eyebrow">Local file converter</div>
+    <h1>Contact<br><span>Sheet.</span></h1>
+    <p class="lede">Run a PDF through the scanner and get pages back as images — or feed it prints and develop them into a single PDF. Nothing leaves your machine except the file you choose to convert.</p>
+  </header>
+
+  <div class="switch" role="tablist" aria-label="Conversion mode">
+    <button class="active" id="tab-p2i" role="tab" aria-selected="true"><span class="num">01</span> PDF → Images</button>
+    <button id="tab-i2p" role="tab" aria-selected="false"><span class="num">02</span> Images → PDF</button>
+  </div>
+
+  <!-- ============ PDF -> IMAGES ============ -->
+  <section class="panel active" id="panel-p2i">
+    <div class="frame" id="frame-p2i">
+      <div class="sprockets left" id="sprL-p2i"></div>
+      <div class="sprockets right" id="sprR-p2i"></div>
+      <div class="scanline" id="scan-p2i"></div>
+
+      <div class="dropzone" id="drop-p2i" tabindex="0" role="button" aria-label="Choose a PDF file">
+        <div class="glyph">⇊</div>
+        <div class="primary" id="drop-p2i-primary">Drop a PDF here, or click to choose one</div>
+        <div class="secondary">.PDF · UP TO 40MB · UP TO 60 PAGES</div>
+        <input type="file" id="file-p2i" accept="application/pdf,.pdf" />
+      </div>
+
+      <div class="controls">
+        <div class="field">
+          <label for="dpi-select">Resolution</label>
+          <select id="dpi-select">
+            <option value="72">72 DPI — screen</option>
+            <option value="150" selected>150 DPI — standard</option>
+            <option value="300">300 DPI — print</option>
+            <option value="600">600 DPI — max detail</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="fmt-select">Format</label>
+          <select id="fmt-select">
+            <option value="png" selected>PNG</option>
+            <option value="jpg">JPG</option>
+            <option value="webp">WEBP</option>
+          </select>
+        </div>
+        <div class="spacer"></div>
+        <button class="primary-btn" id="btn-p2i" disabled>Scan Pages</button>
+      </div>
+
+      <div class="status-line" id="status-p2i"></div>
+    </div>
+
+    <div class="results" id="results-p2i" style="display:none;">
+      <div class="results-head">
+        <h2>Output</h2>
+        <div class="results-meta" id="meta-p2i"></div>
+      </div>
+      <div style="margin-bottom:18px;">
+        <button class="ghost-btn" id="btn-download-zip">↓ Download all (.zip)</button>
+      </div>
+      <div class="grid" id="grid-p2i"></div>
+    </div>
+  </section>
+
+  <!-- ============ IMAGES -> PDF ============ -->
+  <section class="panel" id="panel-i2p">
+    <div class="frame" id="frame-i2p">
+      <div class="sprockets left" id="sprL-i2p"></div>
+      <div class="sprockets right" id="sprR-i2p"></div>
+      <div class="scanline" id="scan-i2p"></div>
+
+      <div class="dropzone" id="drop-i2p" tabindex="0" role="button" aria-label="Choose image files">
+        <div class="glyph">⇊</div>
+        <div class="primary">Drop images here, or click to choose files</div>
+        <div class="secondary">.PNG · .JPG · .WEBP · UP TO 60 IMAGES</div>
+        <div class="secondary" style="margin-top:6px;">TIP: IN THE FILE DIALOG, HOLD ⌘ (MAC) OR CTRL (WINDOWS) TO PICK SEVERAL AT ONCE — OR JUST DRAG A WHOLE FOLDER IN</div>
+        <input type="file" id="file-i2p" accept="image/png,image/jpeg,image/webp" multiple />
+      </div>
+
+      <div class="hint" id="stage-hint" style="display:none;">Order below sets page order — use ↑ ↓ to rearrange.</div>
+      <div class="filmstrip" id="filmstrip"></div>
+
+      <div class="controls" id="controls-i2p" style="display:none;">
+        <div class="field">
+          <label for="fit-select">Page size</label>
+          <select id="fit-select">
+            <option value="actual" selected>Match each image</option>
+          </select>
+        </div>
+        <div class="spacer"></div>
+        <button class="primary-btn" id="btn-i2p" disabled>Develop PDF</button>
+      </div>
+
+      <div class="status-line" id="status-i2p"></div>
+    </div>
+
+    <div class="results" id="results-i2p" style="display:none;">
+      <div class="results-head">
+        <h2>Output</h2>
+        <div class="results-meta" id="meta-i2p"></div>
+      </div>
+      <div class="grid" style="grid-template-columns:1fr;max-width:280px;">
+        <div class="print-card">
+          <div class="sprocket-strip"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+          <div style="padding:36px 12px;text-align:center;">
+            <div style="font-family:'Space Grotesk',sans-serif;font-size:15px;margin-bottom:14px;">converted.pdf</div>
+            <a class="mono" id="link-pdf" href="#" download="converted.pdf" style="display:inline-block;padding:10px 18px;background:var(--amber);color:#14161b;border-radius:2px;text-decoration:none;font-size:12px;">↓ Download PDF</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <span>Contact Sheet — a small utility, not a service.</span>
+    <span id="api-indicator" class="mono">API: checking…</span>
+  </footer>
+
+</div>
+
+<script>
+(function(){
+
+  // Same origin: FastAPI serves this page AND the /api/* routes, so no
+  // cross-origin base URL is needed. Leave as '' unless you split the
+  // frontend onto a different host later.
+  const API_BASE = '';
+
+  // ---------- sprocket decoration ----------
+  function paintSprockets(el, count){
+    el.innerHTML = '';
+    for(let i=0;i<count;i++){
+      const s = document.createElement('span');
+      el.appendChild(s);
+    }
+  }
+  ['sprL-p2i','sprR-p2i','sprL-i2p','sprR-i2p'].forEach(id=>{
+    paintSprockets(document.getElementById(id), 14);
+  });
+
+  // ---------- tab switching ----------
+  const tabP2I = document.getElementById('tab-p2i');
+  const tabI2P = document.getElementById('tab-i2p');
+  const panelP2I = document.getElementById('panel-p2i');
+  const panelI2P = document.getElementById('panel-i2p');
+
+  function activate(which){
+    const p2i = which === 'p2i';
+    tabP2I.classList.toggle('active', p2i);
+    tabI2P.classList.toggle('active', !p2i);
+    tabP2I.setAttribute('aria-selected', p2i);
+    tabI2P.setAttribute('aria-selected', !p2i);
+    panelP2I.classList.toggle('active', p2i);
+    panelI2P.classList.toggle('active', !p2i);
+  }
+  tabP2I.addEventListener('click', ()=>activate('p2i'));
+  tabI2P.addEventListener('click', ()=>activate('i2p'));
+
+  // ---------- API health check ----------
+  const apiIndicator = document.getElementById('api-indicator');
+  fetch(API_BASE + '/api/health').then(r=>{
+    if(r.ok){ apiIndicator.textContent = 'API: connected'; apiIndicator.style.color = 'var(--teal)'; }
+    else throw new Error();
+  }).catch(()=>{
+    apiIndicator.textContent = 'API: offline';
+    apiIndicator.style.color = 'var(--danger)';
+  });
+
+  function bytesToSize(bytes){
+    if(bytes < 1024) return bytes + ' B';
+    if(bytes < 1024*1024) return (bytes/1024).toFixed(1) + ' KB';
+    return (bytes/(1024*1024)).toFixed(2) + ' MB';
+  }
+
+  // =========================================================
+  // PANEL 1: PDF -> IMAGES
+  // =========================================================
+  (function(){
+    const drop = document.getElementById('drop-p2i');
+    const fileInput = document.getElementById('file-p2i');
+    const primaryText = document.getElementById('drop-p2i-primary');
+    const btn = document.getElementById('btn-p2i');
+    const status = document.getElementById('status-p2i');
+    const scan = document.getElementById('scan-p2i');
+    const resultsWrap = document.getElementById('results-p2i');
+    const grid = document.getElementById('grid-p2i');
+    const meta = document.getElementById('meta-p2i');
+    const dpiSelect = document.getElementById('dpi-select');
+    const fmtSelect = document.getElementById('fmt-select');
+    const btnZip = document.getElementById('btn-download-zip');
+
+    let currentFile = null;
+    let zipBase64 = null;
+    let zipFilename = 'images.zip';
+
+    function setFile(f){
+      if(!f) return;
+      if(!(f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'))){
+        setStatus('That doesn\'t look like a PDF.', 'error');
+        return;
+      }
+      currentFile = f;
+      primaryText.textContent = f.name + ' — ' + bytesToSize(f.size);
+      btn.disabled = false;
+      setStatus('');
+      resultsWrap.style.display = 'none';
+    }
+
+    function setStatus(msg, kind){
+      status.textContent = msg || '';
+      status.className = 'status-line' + (kind ? ' ' + kind : '');
+    }
+
+    drop.addEventListener('click', ()=>fileInput.click());
+    drop.addEventListener('keydown', e=>{ if(e.key==='Enter' || e.key===' '){ e.preventDefault(); fileInput.click(); }});
+    fileInput.addEventListener('change', e=> setFile(e.target.files[0]));
+
+    ['dragenter','dragover'].forEach(evt=>{
+      drop.addEventListener(evt, e=>{ e.preventDefault(); drop.classList.add('drag'); });
+    });
+    ['dragleave','drop'].forEach(evt=>{
+      drop.addEventListener(evt, e=>{ e.preventDefault(); drop.classList.remove('drag'); });
+    });
+    drop.addEventListener('drop', e=>{
+      const f = e.dataTransfer.files[0];
+      setFile(f);
+    });
+
+    btn.addEventListener('click', async ()=>{
+      if(!currentFile) return;
+      btn.disabled = true;
+      scan.classList.add('active');
+      setStatus('Scanning ' + currentFile.name + ' at ' + dpiSelect.value + ' DPI…');
+      resultsWrap.style.display = 'none';
+
+      const form = new FormData();
+      form.append('file', currentFile);
+      form.append('dpi', dpiSelect.value);
+      form.append('output_format', fmtSelect.value);
+
+      try{
+        const res = await fetch(API_BASE + '/api/pdf-to-images', { method:'POST', body: form });
+        if(!res.ok){
+          const err = await res.json().catch(()=>({detail:'Conversion failed.'}));
+          throw new Error(err.detail || 'Conversion failed.');
+        }
+        const data = await res.json();
+        renderResults(data);
+        setStatus('Done — ' + data.page_count + ' page' + (data.page_count===1?'':'s') + ' developed.', 'ok');
+      }catch(err){
+        setStatus(err.message || 'Something went wrong.', 'error');
+      }finally{
+        scan.classList.remove('active');
+        btn.disabled = false;
+      }
+    });
+
+    function renderResults(data){
+      grid.innerHTML = '';
+      zipBase64 = data.zip_base64;
+      zipFilename = data.zip_filename;
+      meta.textContent = data.page_count + ' page' + (data.page_count===1?'':'s') + ' · ' + data.dpi + ' DPI · .' + data.format.toUpperCase();
+
+      data.pages.forEach(p=>{
+        const card = document.createElement('div');
+        card.className = 'print-card';
+        card.innerHTML = `
+          <div class="sprocket-strip"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+          <img src="${p.data_url}" alt="${p.filename}" loading="lazy" />
+          <div class="print-caption">
+            <span class="fname">${p.filename}</span>
+            <div class="meta">
+              <span>${p.width}×${p.height} · ${bytesToSize(p.size_bytes)}</span>
+              <a href="${p.data_url}" download="${p.filename}">↓</a>
+            </div>
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+
+      resultsWrap.style.display = 'block';
+    }
+
+    btnZip.addEventListener('click', ()=>{
+      if(!zipBase64) return;
+      const byteChars = atob(zipBase64);
+      const byteNumbers = new Array(byteChars.length);
+      for(let i=0;i<byteChars.length;i++) byteNumbers[i] = byteChars.charCodeAt(i);
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], {type:'application/zip'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = zipFilename;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    });
+  })();
+
+  // =========================================================
+  // PANEL 2: IMAGES -> PDF
+  // =========================================================
+  (function(){
+    const drop = document.getElementById('drop-i2p');
+    const fileInput = document.getElementById('file-i2p');
+    const filmstrip = document.getElementById('filmstrip');
+    const stageHint = document.getElementById('stage-hint');
+    const controls = document.getElementById('controls-i2p');
+    const btn = document.getElementById('btn-i2p');
+    const status = document.getElementById('status-i2p');
+    const scan = document.getElementById('scan-i2p');
+    const resultsWrap = document.getElementById('results-i2p');
+    const meta = document.getElementById('meta-i2p');
+    const linkPdf = document.getElementById('link-pdf');
+
+    let staged = []; // {file, url}
+
+    function setStatus(msg, kind){
+      status.textContent = msg || '';
+      status.className = 'status-line' + (kind ? ' ' + kind : '');
+    }
+
+    function addFiles(fileList){
+      const arr = Array.from(fileList).filter(f=>f.type.startsWith('image/'));
+      if(arr.length === 0){
+        setStatus('Those don\'t look like images.', 'error');
+        return;
+      }
+      arr.forEach(f=> staged.push({file:f, url:URL.createObjectURL(f)}));
+      renderFilmstrip();
+      setStatus('');
+    }
+
+    drop.addEventListener('click', ()=>fileInput.click());
+    drop.addEventListener('keydown', e=>{ if(e.key==='Enter' || e.key===' '){ e.preventDefault(); fileInput.click(); }});
+    fileInput.addEventListener('change', e=>{ addFiles(e.target.files); fileInput.value=''; });
+
+    ['dragenter','dragover'].forEach(evt=>{
+      drop.addEventListener(evt, e=>{ e.preventDefault(); drop.classList.add('drag'); });
+    });
+    ['dragleave','drop'].forEach(evt=>{
+      drop.addEventListener(evt, e=>{ e.preventDefault(); drop.classList.remove('drag'); });
+    });
+    drop.addEventListener('drop', e=> addFiles(e.dataTransfer.files));
+
+    function renderFilmstrip(){
+      filmstrip.innerHTML = '';
+      staged.forEach((item, idx)=>{
+        const el = document.createElement('div');
+        el.className = 'film-item';
+        el.innerHTML = `
+          <div class="thumb-wrap"><img src="${item.url}" alt="${item.file.name}" /></div>
+          <div class="film-foot">
+            <span class="film-name" title="${item.file.name}">${idx+1}. ${item.file.name}</span>
+            <div class="film-order">
+              <button data-act="up" data-idx="${idx}" aria-label="Move earlier">↑</button>
+              <button data-act="down" data-idx="${idx}" aria-label="Move later">↓</button>
+              <button data-act="remove" data-idx="${idx}" class="remove" aria-label="Remove">✕</button>
+            </div>
+          </div>
+        `;
+        filmstrip.appendChild(el);
+      });
+
+      const hasFiles = staged.length > 0;
+      stageHint.style.display = hasFiles ? 'block' : 'none';
+      controls.style.display = hasFiles ? 'flex' : 'none';
+      btn.disabled = !hasFiles;
+      if(!hasFiles) resultsWrap.style.display = 'none';
+    }
+
+    filmstrip.addEventListener('click', e=>{
+      const b = e.target.closest('button');
+      if(!b) return;
+      const idx = parseInt(b.dataset.idx, 10);
+      const act = b.dataset.act;
+      if(act === 'remove'){
+        staged.splice(idx,1);
+      } else if(act === 'up' && idx > 0){
+        [staged[idx-1], staged[idx]] = [staged[idx], staged[idx-1]];
+      } else if(act === 'down' && idx < staged.length-1){
+        [staged[idx+1], staged[idx]] = [staged[idx], staged[idx+1]];
+      }
+      renderFilmstrip();
+    });
+
+    btn.addEventListener('click', async ()=>{
+      if(staged.length === 0) return;
+      btn.disabled = true;
+      scan.classList.add('active');
+      setStatus('Developing ' + staged.length + ' image' + (staged.length===1?'':'s') + ' into a PDF…');
+      resultsWrap.style.display = 'none';
+
+      const form = new FormData();
+      staged.forEach(item => form.append('files', item.file));
+
+      try{
+        const res = await fetch(API_BASE + '/api/images-to-pdf', { method:'POST', body: form });
+        if(!res.ok){
+          const err = await res.json().catch(()=>({detail:'Conversion failed.'}));
+          throw new Error(err.detail || 'Conversion failed.');
+        }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        linkPdf.href = url;
+        meta.textContent = staged.length + ' page' + (staged.length===1?'':'s') + ' · ' + bytesToSize(blob.size);
+        resultsWrap.style.display = 'block';
+        setStatus('Done — PDF ready.', 'ok');
+      }catch(err){
+        setStatus(err.message || 'Something went wrong.', 'error');
+      }finally{
+        scan.classList.remove('active');
+        btn.disabled = false;
+      }
+    });
+  })();
+
+})();
+</script>
+</body>
+</html>
