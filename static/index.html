@@ -563,7 +563,7 @@
 
   <footer>
     <span>Contact Sheet — a small utility, not a service.</span>
-    <span id="api-indicator" class="mono">API: checking…</span>
+    <span id="api-indicator" class="mono">checking…</span>
   </footer>
 
 </div>
@@ -609,7 +609,7 @@
   // ---------- API health check ----------
   const apiIndicator = document.getElementById('api-indicator');
   fetch(API_BASE + '/api/health').then(r=>{
-    if(r.ok){ apiIndicator.textContent = 'API: connected'; apiIndicator.style.color = 'var(--teal)'; }
+    if(r.ok){ apiIndicator.textContent = 'connected'; apiIndicator.style.color = 'var(--teal)'; }
     else throw new Error();
   }).catch(()=>{
     apiIndicator.textContent = 'API: offline';
