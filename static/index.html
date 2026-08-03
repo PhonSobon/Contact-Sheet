@@ -478,6 +478,40 @@
   .page-card .page-actions button:hover{color:var(--text);border-color:var(--text-muted);}
   .page-card .page-actions button.remove:hover{color:var(--danger);border-color:var(--danger);}
 
+  /* ---------- stamp panel sections ---------- */
+  .stamp-section{
+    margin-top:24px;
+    padding-top:20px;
+    border-top:1px solid var(--line-soft);
+  }
+  .stamp-section-title{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    letter-spacing:.1em;
+    text-transform:uppercase;
+    color:var(--amber);
+  }
+  .field input[type=color]{
+    width:44px;
+    height:38px;
+    padding:2px;
+    background:var(--ink);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    cursor:pointer;
+  }
+
+  /* ---------- transparency checkerboard for cutout previews ---------- */
+  .print-card.transparent img{
+    background-image:
+      linear-gradient(45deg, #c9c6bd 25%, transparent 25%),
+      linear-gradient(-45deg, #c9c6bd 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #c9c6bd 75%),
+      linear-gradient(-45deg, transparent 75%, #c9c6bd 75%);
+    background-size:16px 16px;
+    background-position:0 0, 0 8px, 8px -8px, -8px 0px;
+  }
+
   /* ---------- empty note ---------- */
   .hint{
     font-family:'IBM Plex Mono',monospace;
@@ -527,6 +561,8 @@
     <button id="tab-i2p" role="tab" aria-selected="false"><span class="num">02</span> Images → PDF</button>
     <button id="tab-edit" role="tab" aria-selected="false"><span class="num">03</span> Edit PDF</button>
     <button id="tab-compress" role="tab" aria-selected="false"><span class="num">04</span> Compress</button>
+    <button id="tab-stamp" role="tab" aria-selected="false"><span class="num">05</span> Stamp</button>
+    <button id="tab-removebg" role="tab" aria-selected="false"><span class="num">06</span> Remove BG</button>
   </div>
 
   <!-- ============ PDF -> IMAGES ============ -->
@@ -793,15 +829,183 @@
           <div style="margin-bottom:18px;">
             <button class="ghost-btn" id="btn-download-zip-cimg">↓ Download all (.zip)</button>
           </div>
-          <div class="grid" id="grid-cimg"></div>
+  </section>
+
+  <!-- ============ STAMP (watermark / page numbers / header & footer) ============ -->
+  <section class="panel" id="panel-stamp">
+    <div class="frame" id="frame-stamp">
+      <div class="sprockets left" id="sprL-stamp"></div>
+      <div class="sprockets right" id="sprR-stamp"></div>
+      <div class="scanline" id="scan-stamp"></div>
+
+      <div class="dropzone" id="drop-stamp" tabindex="0" role="button" aria-label="Choose a PDF to stamp">
+        <div class="glyph">⇊</div>
+        <div class="primary" id="drop-stamp-primary">Drop a PDF here, or click to choose one</div>
+        <div class="secondary">.PDF · UP TO 40MB · UP TO 60 PAGES</div>
+        <input type="file" id="file-stamp" accept="application/pdf,.pdf" />
+      </div>
+
+      <div class="stamp-section">
+        <div class="stamp-section-title">Watermark</div>
+        <div class="controls" style="border-top:none;padding-top:0;margin-top:14px;">
+          <div class="field" style="flex:2;min-width:200px;">
+            <label for="wm-text">Text</label>
+            <input type="text" id="wm-text" class="mono" placeholder="e.g. DRAFT, CONFIDENTIAL" />
+          </div>
+          <div class="field">
+            <label for="wm-rotation">Angle</label>
+            <select id="wm-rotation">
+              <option value="0">0°</option>
+              <option value="45" selected>45°</option>
+              <option value="-45">−45°</option>
+              <option value="90">90°</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="wm-size">Size</label>
+            <select id="wm-size">
+              <option value="28">Small</option>
+              <option value="40" selected>Medium</option>
+              <option value="60">Large</option>
+              <option value="90">Huge</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="wm-opacity">Opacity</label>
+            <select id="wm-opacity">
+              <option value="0.08">Faint</option>
+              <option value="0.15" selected>Light</option>
+              <option value="0.3">Medium</option>
+              <option value="0.5">Bold</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="wm-color">Color</label>
+            <input type="color" id="wm-color" value="#808080" />
+          </div>
+        </div>
+      </div>
+
+      <div class="stamp-section">
+        <div class="stamp-section-title">Header &amp; footer</div>
+        <div class="controls" style="border-top:none;padding-top:0;margin-top:14px;">
+          <div class="field" style="flex:1;min-width:180px;">
+            <label for="header-text">Header text</label>
+            <input type="text" id="header-text" class="mono" placeholder="optional" />
+          </div>
+          <div class="field">
+            <label for="header-position">Position</label>
+            <select id="header-position">
+              <option value="top-left">Top left</option>
+              <option value="top-center" selected>Top center</option>
+              <option value="top-right">Top right</option>
+            </select>
+          </div>
+          <div class="field" style="flex:1;min-width:180px;">
+            <label for="footer-text">Footer text</label>
+            <input type="text" id="footer-text" class="mono" placeholder="optional" />
+          </div>
+          <div class="field">
+            <label for="footer-position">Position</label>
+            <select id="footer-position">
+              <option value="bottom-left">Bottom left</option>
+              <option value="bottom-center" selected>Bottom center</option>
+              <option value="bottom-right">Bottom right</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="stamp-section">
+        <div class="stamp-section-title">Page numbers</div>
+        <div class="controls" style="border-top:none;padding-top:0;margin-top:14px;">
+          <div class="field">
+            <label for="pn-enabled">Include</label>
+            <select id="pn-enabled">
+              <option value="off" selected>Off</option>
+              <option value="on">On</option>
+            </select>
+          </div>
+          <div class="field" style="flex:1;min-width:180px;">
+            <label for="pn-format">Format</label>
+            <input type="text" id="pn-format" class="mono" value="Page {n} of {total}" />
+          </div>
+          <div class="field">
+            <label for="pn-position">Position</label>
+            <select id="pn-position">
+              <option value="bottom-left">Bottom left</option>
+              <option value="bottom-center" selected>Bottom center</option>
+              <option value="bottom-right">Bottom right</option>
+              <option value="top-left">Top left</option>
+              <option value="top-center">Top center</option>
+              <option value="top-right">Top right</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <div class="spacer"></div>
+        <button class="primary-btn" id="btn-stamp" disabled>Apply Stamp</button>
+      </div>
+
+      <div class="status-line" id="status-stamp"></div>
+    </div>
+
+    <div class="results" id="results-stamp" style="display:none;">
+      <div class="results-head">
+        <h2>Output</h2>
+        <div class="results-meta" id="meta-stamp"></div>
+      </div>
+      <div class="grid" style="grid-template-columns:1fr;max-width:280px;">
+        <div class="print-card">
+          <div class="sprocket-strip"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+          <div style="padding:36px 12px;text-align:center;">
+            <div style="font-family:'Space Grotesk',sans-serif;font-size:15px;margin-bottom:14px;" id="stamp-out-name">stamped.pdf</div>
+            <a class="mono" id="link-stamp" href="#" download="stamped.pdf" style="display:inline-block;padding:10px 18px;background:var(--amber);color:#14161b;border-radius:2px;text-decoration:none;font-size:12px;">↓ Download PDF</a>
+          </div>
         </div>
       </div>
     </div>
   </section>
 
+  <!-- ============ REMOVE BACKGROUND ============ -->
+  <section class="panel" id="panel-removebg">
+    <div class="frame" id="frame-removebg">
+      <div class="sprockets left" id="sprL-removebg"></div>
+      <div class="sprockets right" id="sprR-removebg"></div>
+      <div class="scanline" id="scan-removebg"></div>
+
+      <div class="dropzone" id="drop-removebg" tabindex="0" role="button" aria-label="Choose images to cut out">
+        <div class="glyph">⇊</div>
+        <div class="primary" id="drop-removebg-primary">Drop images here, or click to choose files</div>
+        <div class="secondary">.PNG · .JPG · .WEBP · UP TO 15 IMAGES · A FEW SECONDS EACH</div>
+        <input type="file" id="file-removebg" accept="image/png,image/jpeg,image/webp" multiple />
+      </div>
+
+      <div class="controls">
+        <div class="spacer"></div>
+        <button class="primary-btn" id="btn-removebg" disabled>Cut Out Subjects</button>
+      </div>
+
+      <div class="status-line" id="status-removebg"></div>
+    </div>
+
+    <div class="results" id="results-removebg" style="display:none;">
+      <div class="results-head">
+        <h2>Output</h2>
+        <div class="results-meta" id="meta-removebg"></div>
+      </div>
+      <div style="margin-bottom:18px;">
+        <button class="ghost-btn" id="btn-download-zip-removebg">↓ Download all (.zip)</button>
+      </div>
+      <div class="grid" id="grid-removebg"></div>
+    </div>
+  </section>
+
   <footer>
     <span>Contact Sheet — a small utility, not a service.</span>
-    <span id="api-indicator" class="mono">checking…</span>
+    <span id="api-indicator" class="mono">API: checking…</span>
   </footer>
 
 </div>
@@ -822,7 +1026,7 @@
       el.appendChild(s);
     }
   }
-  ['sprL-p2i','sprR-p2i','sprL-i2p','sprR-i2p','sprL-edit','sprR-edit','sprL-compress','sprR-compress'].forEach(id=>{
+  ['sprL-p2i','sprR-p2i','sprL-i2p','sprR-i2p','sprL-edit','sprR-edit','sprL-compress','sprR-compress','sprL-stamp','sprR-stamp','sprL-removebg','sprR-removebg'].forEach(id=>{
     paintSprockets(document.getElementById(id), 14);
   });
 
@@ -832,6 +1036,8 @@
     'i2p': { btn: document.getElementById('tab-i2p'), panel: document.getElementById('panel-i2p') },
     'edit': { btn: document.getElementById('tab-edit'), panel: document.getElementById('panel-edit') },
     'compress': { btn: document.getElementById('tab-compress'), panel: document.getElementById('panel-compress') },
+    'stamp': { btn: document.getElementById('tab-stamp'), panel: document.getElementById('panel-stamp') },
+    'removebg': { btn: document.getElementById('tab-removebg'), panel: document.getElementById('panel-removebg') },
   };
 
   function activate(which){
@@ -847,10 +1053,10 @@
   // ---------- API health check ----------
   const apiIndicator = document.getElementById('api-indicator');
   fetch(API_BASE + '/api/health').then(r=>{
-    if(r.ok){ apiIndicator.textContent = 'connected'; apiIndicator.style.color = 'var(--teal)'; }
+    if(r.ok){ apiIndicator.textContent = 'API: connected'; apiIndicator.style.color = 'var(--teal)'; }
     else throw new Error();
   }).catch(()=>{
-    apiIndicator.textContent = 'offline';
+    apiIndicator.textContent = 'API: offline';
     apiIndicator.style.color = 'var(--danger)';
   });
 
@@ -1508,6 +1714,216 @@
         URL.revokeObjectURL(url);
       });
     })();
+  })();
+
+  // =========================================================
+  // PANEL 5: STAMP (watermark / page numbers / header & footer)
+  // =========================================================
+  (function(){
+    const drop = document.getElementById('drop-stamp');
+    const fileInput = document.getElementById('file-stamp');
+    const primary = document.getElementById('drop-stamp-primary');
+    const btn = document.getElementById('btn-stamp');
+    const status = document.getElementById('status-stamp');
+    const scan = document.getElementById('scan-stamp');
+    const resultsWrap = document.getElementById('results-stamp');
+    const meta = document.getElementById('meta-stamp');
+    const linkStamp = document.getElementById('link-stamp');
+    const outNameLabel = document.getElementById('stamp-out-name');
+
+    let currentFile = null;
+
+    function setStatus(msg, kind){
+      status.textContent = msg || '';
+      status.className = 'status-line' + (kind ? ' ' + kind : '');
+    }
+
+    function setFile(f){
+      if(!f) return;
+      if(!(f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'))){
+        setStatus('That doesn\'t look like a PDF.', 'error');
+        return;
+      }
+      currentFile = f;
+      primary.textContent = f.name + ' — ' + bytesToSize(f.size);
+      btn.disabled = false;
+      setStatus('');
+      resultsWrap.style.display = 'none';
+    }
+
+    drop.addEventListener('click', ()=>fileInput.click());
+    drop.addEventListener('keydown', e=>{ if(e.key==='Enter' || e.key===' '){ e.preventDefault(); fileInput.click(); }});
+    fileInput.addEventListener('change', e=> setFile(e.target.files[0]));
+    ['dragenter','dragover'].forEach(evt=> drop.addEventListener(evt, e=>{ e.preventDefault(); drop.classList.add('drag'); }));
+    ['dragleave','drop'].forEach(evt=> drop.addEventListener(evt, e=>{ e.preventDefault(); drop.classList.remove('drag'); }));
+    drop.addEventListener('drop', e=> setFile(e.dataTransfer.files[0]));
+
+    function hexFromColorInput(){
+      return document.getElementById('wm-color').value.replace('#','');
+    }
+
+    btn.addEventListener('click', async ()=>{
+      if(!currentFile) return;
+
+      const wmText = document.getElementById('wm-text').value.trim();
+      const headerText = document.getElementById('header-text').value.trim();
+      const footerText = document.getElementById('footer-text').value.trim();
+      const pnEnabled = document.getElementById('pn-enabled').value === 'on';
+
+      if(!wmText && !headerText && !footerText && !pnEnabled){
+        setStatus('Add a watermark, header, footer, or turn on page numbers first.', 'error');
+        return;
+      }
+
+      btn.disabled = true;
+      scan.classList.add('active');
+      setStatus('Stamping ' + currentFile.name + '…');
+      resultsWrap.style.display = 'none';
+
+      const form = new FormData();
+      form.append('file', currentFile);
+      form.append('watermark_text', wmText);
+      form.append('watermark_opacity', document.getElementById('wm-opacity').value);
+      form.append('watermark_size', document.getElementById('wm-size').value);
+      form.append('watermark_rotation', document.getElementById('wm-rotation').value);
+      form.append('watermark_color', hexFromColorInput());
+      form.append('page_numbers', pnEnabled ? 'true' : 'false');
+      form.append('page_number_format', document.getElementById('pn-format').value || 'Page {n} of {total}');
+      form.append('page_number_position', document.getElementById('pn-position').value);
+      form.append('header_text', headerText);
+      form.append('header_position', document.getElementById('header-position').value);
+      form.append('footer_text', footerText);
+      form.append('footer_position', document.getElementById('footer-position').value);
+
+      try{
+        const res = await fetch(API_BASE + '/api/pdf/stamp', { method:'POST', body: form });
+        if(!res.ok){
+          const err = await res.json().catch(()=>({detail:'Stamping failed.'}));
+          throw new Error(err.detail || 'Stamping failed.');
+        }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const outName = currentFile.name.replace(/\.pdf$/i, '') + '-stamped.pdf';
+        linkStamp.href = url;
+        linkStamp.download = outName;
+        outNameLabel.textContent = outName;
+        meta.textContent = bytesToSize(blob.size);
+        resultsWrap.style.display = 'block';
+        setStatus('Done.', 'ok');
+      }catch(err){
+        setStatus(err.message || 'Something went wrong.', 'error');
+      }finally{
+        scan.classList.remove('active');
+        btn.disabled = false;
+      }
+    });
+  })();
+
+  // =========================================================
+  // PANEL 6: REMOVE BACKGROUND
+  // =========================================================
+  (function(){
+    const drop = document.getElementById('drop-removebg');
+    const fileInput = document.getElementById('file-removebg');
+    const primary = document.getElementById('drop-removebg-primary');
+    const btn = document.getElementById('btn-removebg');
+    const status = document.getElementById('status-removebg');
+    const scan = document.getElementById('scan-removebg');
+    const resultsWrap = document.getElementById('results-removebg');
+    const meta = document.getElementById('meta-removebg');
+    const grid = document.getElementById('grid-removebg');
+    const btnZip = document.getElementById('btn-download-zip-removebg');
+
+    let staged = [];
+    let zipBase64 = null;
+    let zipFilename = 'no-background.zip';
+
+    function setStatus(msg, kind){
+      status.textContent = msg || '';
+      status.className = 'status-line' + (kind ? ' ' + kind : '');
+    }
+
+    function addFiles(fileList){
+      const arr = Array.from(fileList).filter(f=>f.type.startsWith('image/'));
+      if(arr.length === 0){ setStatus('Those don\'t look like images.', 'error'); return; }
+      staged = staged.concat(arr);
+      if(staged.length > 15){
+        setStatus('Up to 15 images at a time — trimmed to the first 15.', 'error');
+        staged = staged.slice(0, 15);
+      }
+      primary.textContent = staged.length + ' image' + (staged.length===1?'':'s') + ' selected';
+      btn.disabled = false;
+      resultsWrap.style.display = 'none';
+    }
+
+    drop.addEventListener('click', ()=>fileInput.click());
+    drop.addEventListener('keydown', e=>{ if(e.key==='Enter' || e.key===' '){ e.preventDefault(); fileInput.click(); }});
+    fileInput.addEventListener('change', e=>{ addFiles(e.target.files); fileInput.value=''; });
+    ['dragenter','dragover'].forEach(evt=> drop.addEventListener(evt, e=>{ e.preventDefault(); drop.classList.add('drag'); }));
+    ['dragleave','drop'].forEach(evt=> drop.addEventListener(evt, e=>{ e.preventDefault(); drop.classList.remove('drag'); }));
+    drop.addEventListener('drop', e=> addFiles(e.dataTransfer.files));
+
+    btn.addEventListener('click', async ()=>{
+      if(staged.length === 0) return;
+      btn.disabled = true;
+      scan.classList.add('active');
+      setStatus('Cutting out ' + staged.length + ' subject' + (staged.length===1?'':'s') + ' — a few seconds each…');
+      resultsWrap.style.display = 'none';
+
+      const form = new FormData();
+      staged.forEach(f=> form.append('files', f));
+
+      try{
+        const res = await fetch(API_BASE + '/api/image/remove-bg', { method:'POST', body: form });
+        if(!res.ok){
+          const err = await res.json().catch(()=>({detail:'Background removal failed.'}));
+          throw new Error(err.detail || 'Background removal failed.');
+        }
+        const data = await res.json();
+        zipBase64 = data.zip_base64;
+        zipFilename = data.zip_filename;
+
+        grid.innerHTML = '';
+        data.results.forEach(r=>{
+          const card = document.createElement('div');
+          card.className = 'print-card transparent';
+          card.innerHTML = `
+            <div class="sprocket-strip"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+            <img src="${r.data_url}" alt="${r.filename}" loading="lazy" />
+            <div class="print-caption">
+              <span class="fname">${r.filename}</span>
+              <div class="meta">
+                <span>${r.width}×${r.height} · ${bytesToSize(r.size_bytes)}</span>
+                <a href="${r.data_url}" download="${r.filename}">↓</a>
+              </div>
+            </div>
+          `;
+          grid.appendChild(card);
+        });
+        meta.textContent = data.results.length + ' image' + (data.results.length===1?'':'s') + ' cut out';
+        resultsWrap.style.display = 'block';
+        setStatus('Done.', 'ok');
+      }catch(err){
+        setStatus(err.message || 'Something went wrong.', 'error');
+      }finally{
+        scan.classList.remove('active');
+        btn.disabled = false;
+      }
+    });
+
+    btnZip.addEventListener('click', ()=>{
+      if(!zipBase64) return;
+      const byteChars = atob(zipBase64);
+      const byteNumbers = new Array(byteChars.length);
+      for(let i=0;i<byteChars.length;i++) byteNumbers[i] = byteChars.charCodeAt(i);
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], {type:'application/zip'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = zipFilename;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    });
   })();
 
 })();

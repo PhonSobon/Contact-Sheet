@@ -1,13 +1,16 @@
 """
 Contact Sheet — PDF <-> Image conversion + editing API
 Endpoints:
-  POST /api/pdf-to-images   -> multipart PDF in, JSON (thumbnails + zip) out
-  POST /api/images-to-pdf   -> multipart images in, application/pdf out
-  POST /api/pdf/inspect     -> multipart PDF(s) in, JSON page thumbnails out (for the page editor)
-  POST /api/pdf/build       -> multipart PDF(s) + a page "plan" in, application/pdf out
-                                (drives merge, split/extract, delete pages, reorder, rotate, compress)
-  POST /api/image/compress  -> multipart image(s) in, JSON (compressed results + zip) out
-  GET  /api/health          -> liveness check
+  POST /api/pdf-to-images       -> multipart PDF in, JSON (thumbnails + zip) out
+  POST /api/images-to-pdf       -> multipart images in, application/pdf out
+  POST /api/pdf/inspect         -> multipart PDF(s) in, JSON page thumbnails out (for the page editor)
+  POST /api/pdf/build           -> multipart PDF(s) + a page "plan" in, application/pdf out
+                                    (drives merge, split/extract, delete pages, reorder, rotate, compress)
+  POST /api/pdf/stamp           -> multipart PDF in, application/pdf out
+                                    (watermark, page numbers, header/footer text)
+  POST /api/image/compress      -> multipart image(s) in, JSON (compressed results + zip) out
+  POST /api/image/remove-bg     -> multipart image(s) in, JSON (cutout PNGs + zip) out
+  GET  /api/health              -> liveness check
 """
 
 import base64
@@ -24,8 +27,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
+from rembg import remove as rembg_remove, new_session as rembg_new_session
 
 app = FastAPI(title="Contact Sheet", version="1.0.0")
+
+# Loaded once at startup and reused across requests — loading it per-request
+# would re-read the model file from disk every single time.
+BG_REMOVAL_SESSION = rembg_new_session("u2netp")
 
 # CORS is only needed if you ever split the frontend onto another origin.
 # Same-origin (this file serving both API + page) doesn't need it, but it's
@@ -43,8 +51,13 @@ STATIC_DIR = Path(__file__).parent / "static"
 MAX_PDF_BYTES = 40 * 1024 * 1024       # 40 MB
 MAX_IMAGE_BYTES = 20 * 1024 * 1024     # 20 MB per image
 MAX_PAGES = 60                          # safety cap for JSON+thumbnail payload
+MAX_BG_REMOVAL_IMAGES = 15              # this one's CPU-heavy, keep batches small
 ALLOWED_IMAGE_FORMATS = {"png", "jpg", "jpeg", "webp"}
 ALLOWED_OUTPUT_FORMATS = {"png", "jpg", "jpeg", "webp"}
+STAMP_POSITIONS = {
+    "top-left", "top-center", "top-right",
+    "bottom-left", "bottom-center", "bottom-right",
+}
 
 
 @app.get("/api/health")
@@ -405,6 +418,189 @@ async def image_compress(
         {
             "results": results,
             "zip_filename": "compressed-images.zip",
+            "zip_base64": zip_b64,
+        }
+    )
+
+
+def _hex_to_rgb01(hex_color: str):
+    h = (hex_color or "").strip().lstrip("#")
+    if len(h) != 6:
+        h = "808080"
+    try:
+        r = int(h[0:2], 16) / 255.0
+        g = int(h[2:4], 16) / 255.0
+        b = int(h[4:6], 16) / 255.0
+        return (r, g, b)
+    except ValueError:
+        return (0.5, 0.5, 0.5)
+
+
+def _position_point(rect: "fitz.Rect", position: str, margin: float = 28):
+    """Returns (x, y, align) for a given named corner/edge position on a page.
+    align: 0=left, 1=center, 2=right (matches fitz.TEXT_ALIGN_* ordering)."""
+    x_left, x_center, x_right = rect.x0 + margin, rect.width / 2, rect.x1 - margin
+    y_top, y_bottom = rect.y0 + margin, rect.y1 - margin
+    mapping = {
+        "top-left": (x_left, y_top, 0),
+        "top-center": (x_center, y_top, 1),
+        "top-right": (x_right, y_top, 2),
+        "bottom-left": (x_left, y_bottom, 0),
+        "bottom-center": (x_center, y_bottom, 1),
+        "bottom-right": (x_right, y_bottom, 2),
+    }
+    return mapping.get(position, mapping["bottom-center"])
+
+
+@app.post("/api/pdf/stamp")
+async def pdf_stamp(
+    file: UploadFile = File(...),
+    watermark_text: str = Form(""),
+    watermark_opacity: float = Form(0.15),
+    watermark_size: int = Form(48),
+    watermark_rotation: int = Form(45),
+    watermark_color: str = Form("808080"),
+    page_numbers: bool = Form(False),
+    page_number_format: str = Form("Page {n} of {total}"),
+    page_number_position: str = Form("bottom-center"),
+    header_text: str = Form(""),
+    header_position: str = Form("top-center"),
+    footer_text: str = Form(""),
+    footer_position: str = Form("bottom-center"),
+):
+    if not (file.content_type in ("application/pdf", "application/x-pdf") or (file.filename or "").lower().endswith(".pdf")):
+        raise HTTPException(400, "Please upload a PDF file.")
+    if not any([watermark_text.strip(), page_numbers, header_text.strip(), footer_text.strip()]):
+        raise HTTPException(400, "Add a watermark, page numbers, header, or footer — there's nothing to stamp otherwise.")
+
+    raw = await file.read()
+    if len(raw) > MAX_PDF_BYTES:
+        raise HTTPException(413, "PDF exceeds the 40 MB limit.")
+    try:
+        doc = fitz.open(stream=raw, filetype="pdf")
+    except Exception:
+        raise HTTPException(400, "Could not read this PDF — it may be corrupted or encrypted.")
+    if doc.page_count == 0:
+        raise HTTPException(400, "This PDF has no pages.")
+    if doc.page_count > MAX_PAGES:
+        raise HTTPException(400, f"This PDF has {doc.page_count} pages; the demo limit is {MAX_PAGES}.")
+
+    for pos in (page_number_position, header_position, footer_position):
+        if pos not in STAMP_POSITIONS:
+            raise HTTPException(400, f"Unknown position '{pos}'.")
+
+    wm_color = _hex_to_rgb01(watermark_color)
+    total = doc.page_count
+
+    for i, page in enumerate(doc, start=1):
+        rect = page.rect
+
+        if watermark_text.strip():
+            cx, cy = rect.width / 2, rect.height / 2
+            text = watermark_text.strip()
+            # Rough centering: shift left by an estimate of half the text width
+            # at this font size so the rotation pivots near the page center.
+            approx_half_width = len(text) * watermark_size * 0.28
+            mat = fitz.Matrix(1, 1).prerotate(watermark_rotation)
+            page.insert_text(
+                fitz.Point(cx - approx_half_width, cy),
+                text,
+                fontsize=watermark_size,
+                color=wm_color,
+                fill_opacity=max(0.02, min(1.0, watermark_opacity)),
+                morph=(fitz.Point(cx, cy), mat),
+                fontname="helv",
+            )
+
+        if header_text.strip():
+            x, y, align = _position_point(rect, header_position)
+            page.insert_textbox(
+                fitz.Rect(rect.x0 + 10, y - 12, rect.x1 - 10, y + 12),
+                header_text.strip(),
+                fontsize=10,
+                color=(0.2, 0.2, 0.2),
+                align=align,
+                fontname="helv",
+            )
+
+        if footer_text.strip():
+            x, y, align = _position_point(rect, footer_position)
+            page.insert_textbox(
+                fitz.Rect(rect.x0 + 10, y - 12, rect.x1 - 10, y + 12),
+                footer_text.strip(),
+                fontsize=10,
+                color=(0.2, 0.2, 0.2),
+                align=align,
+                fontname="helv",
+            )
+
+        if page_numbers:
+            label = page_number_format.replace("{n}", str(i)).replace("{total}", str(total))
+            x, y, align = _position_point(rect, page_number_position)
+            page.insert_textbox(
+                fitz.Rect(rect.x0 + 10, y - 12, rect.x1 - 10, y + 12),
+                label,
+                fontsize=10,
+                color=(0.2, 0.2, 0.2),
+                align=align,
+                fontname="helv",
+            )
+
+    buf = io.BytesIO()
+    doc.save(buf, garbage=3, deflate=True)
+    doc.close()
+    buf.seek(0)
+
+    base_name = (file.filename or "document").rsplit(".", 1)[0]
+    out_name = f"{base_name}-stamped.pdf"
+    headers = {"Content-Disposition": f'attachment; filename="{out_name}"'}
+    return StreamingResponse(buf, media_type="application/pdf", headers=headers)
+
+
+@app.post("/api/image/remove-bg")
+async def image_remove_bg(files: List[UploadFile] = File(...)):
+    if not files:
+        raise HTTPException(400, "Please upload at least one image.")
+    if len(files) > MAX_BG_REMOVAL_IMAGES:
+        raise HTTPException(400, f"Up to {MAX_BG_REMOVAL_IMAGES} images at a time for background removal.")
+
+    results = []
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for f in files:
+            raw = await f.read()
+            if len(raw) > MAX_IMAGE_BYTES:
+                raise HTTPException(413, f"'{f.filename}' exceeds the 20 MB limit.")
+            try:
+                Image.open(io.BytesIO(raw)).load()
+            except Exception:
+                raise HTTPException(400, f"'{f.filename}' isn't a readable image.")
+
+            try:
+                out_bytes = rembg_remove(raw, session=BG_REMOVAL_SESSION)
+            except Exception:
+                raise HTTPException(500, f"Background removal failed for '{f.filename}'.")
+
+            out_img = Image.open(io.BytesIO(out_bytes))
+            base_name = (f.filename or "image").rsplit(".", 1)[0]
+            out_name = f"{base_name}-nobg.png"
+            zf.writestr(out_name, out_bytes)
+
+            results.append(
+                {
+                    "filename": out_name,
+                    "width": out_img.width,
+                    "height": out_img.height,
+                    "size_bytes": len(out_bytes),
+                    "data_url": f"data:image/png;base64,{base64.b64encode(out_bytes).decode()}",
+                }
+            )
+
+    zip_b64 = base64.b64encode(zip_buffer.getvalue()).decode()
+    return JSONResponse(
+        {
+            "results": results,
+            "zip_filename": "no-background.zip",
             "zip_base64": zip_b64,
         }
     )

@@ -59,6 +59,14 @@ Limits (adjust in `main.py` if needed): PDFs up to 40 MB / 60 pages total, image
 - **Images → PDF** — combine photos/screenshots into one PDF, reorder before converting
 - **Edit PDF** — drop one or more PDFs into an editable page grid: reorder, rotate, delete pages, drop in more PDFs to merge them, or keep only a subset to split/extract
 - **Compress** — shrink a PDF (lossless "optimize" or aggressive "rasterize") or a batch of images (quality + max-dimension), with before/after size shown
+- **Stamp** — add a diagonal watermark, header/footer text, and page numbers to a PDF, all in one pass
+- **Remove Background** — cut the subject out of a photo (transparent PNG), batches of up to 15 at a time
+
+### Remove Background — the fine print
+
+This uses [`rembg`](https://github.com/danielgatis/rembg) (a real segmentation model, `u2netp`), not a color-based crop, so it works on arbitrary photos. Two things to know before deploying:
+- **First run downloads a ~45 MB model file** from GitHub the first time the server starts (cached afterward at `~/.u2netp`, or wherever `U2NET_HOME` points). Make sure the deploy environment can reach `github.com` on first boot, or bake the model into your image ahead of time.
+- **It's CPU-bound and a few seconds per image** — fine for occasional use, but don't expect it to keep up with heavy concurrent traffic without a GPU or a task queue.
 
 ## Deploying
 
