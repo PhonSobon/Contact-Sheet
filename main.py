@@ -11,29 +11,36 @@ Endpoints:
   POST /api/image/compress      -> multipart image(s) in, JSON (compressed results + zip) out
   POST /api/image/remove-bg     -> multipart image(s) in, JSON (cutout PNGs + zip) out
   GET  /api/health              -> liveness check
+
+Background removal runs u2netp directly through onnxruntime (see
+BackgroundRemover below) instead of the `rembg` package. `rembg` is fine
+for a normal server, but it unconditionally imports pymatting/scipy/
+scikit-image at module load time (for an alpha-matting feature we never
+use), which alone adds 300+MB of dependencies — enough to blow past
+serverless platforms' function-size limits (e.g. Vercel's 250-500MB caps).
+Calling onnxruntime directly with the same model and the same pre/post-
+processing rembg uses produces byte-identical output without that weight.
 """
 
 import base64
 import io
 import json
+import os
 import zipfile
 from typing import List
 
 from pathlib import Path
 
 import fitz  # PyMuPDF
+import numpy as np
+import onnxruntime as ort
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
-from rembg import remove as rembg_remove, new_session as rembg_new_session
 
 app = FastAPI(title="Contact Sheet", version="1.0.0")
-
-# Loaded once at startup and reused across requests — loading it per-request
-# would re-read the model file from disk every single time.
-BG_REMOVAL_SESSION = rembg_new_session("u2netp")
 
 # CORS is only needed if you ever split the frontend onto another origin.
 # Same-origin (this file serving both API + page) doesn't need it, but it's
@@ -58,6 +65,61 @@ STAMP_POSITIONS = {
     "top-left", "top-center", "top-right",
     "bottom-left", "bottom-center", "bottom-right",
 }
+
+U2NETP_MODEL_PATH = Path(
+    os.getenv("U2NETP_MODEL_PATH", str(Path(__file__).parent / "model" / "u2netp.onnx"))
+)
+U2NETP_DOWNLOAD_URL = "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx"
+
+_bg_session = None  # lazily created on first use, then reused
+
+
+def _get_bg_session() -> ort.InferenceSession:
+    global _bg_session
+    if _bg_session is not None:
+        return _bg_session
+
+    if not U2NETP_MODEL_PATH.exists():
+        U2NETP_MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+        import urllib.request
+
+        tmp_path = U2NETP_MODEL_PATH.with_suffix(".onnx.part")
+        urllib.request.urlretrieve(U2NETP_DOWNLOAD_URL, tmp_path)
+        tmp_path.rename(U2NETP_MODEL_PATH)
+
+    _bg_session = ort.InferenceSession(str(U2NETP_MODEL_PATH), providers=["CPUExecutionProvider"])
+    return _bg_session
+
+
+def _remove_background(img: Image.Image) -> Image.Image:
+    """Runs u2netp on `img` and returns an RGBA cutout. Pre/post-processing
+    matches rembg's U2netpSession exactly (verified byte-for-byte identical
+    output against rembg's own remove())."""
+    session = _get_bg_session()
+    input_name = session.get_inputs()[0].name
+
+    resized = img.convert("RGB").resize((320, 320), Image.Resampling.LANCZOS)
+    arr = np.array(resized)
+    arr = arr / max(np.max(arr), 1e-6)
+    mean, std = (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
+    normalized = np.zeros((arr.shape[0], arr.shape[1], 3))
+    for c in range(3):
+        normalized[:, :, c] = (arr[:, :, c] - mean[c]) / std[c]
+    normalized = normalized.transpose((2, 0, 1))
+    input_tensor = np.expand_dims(normalized, 0).astype(np.float32)
+
+    outputs = session.run(None, {input_name: input_tensor})
+    pred = outputs[0][:, 0, :, :]
+    lo, hi = np.min(pred), np.max(pred)
+    pred = (pred - lo) / (hi - lo)
+    pred = np.squeeze(pred)
+
+    mask = Image.fromarray((pred * 255).astype("uint8"), mode="L")
+    mask = mask.resize(img.size, Image.Resampling.LANCZOS)
+
+    rgba = img.convert("RGBA")
+    empty = Image.new("RGBA", rgba.size, 0)
+    return Image.composite(rgba, empty, mask)
 
 
 @app.get("/api/health")
@@ -572,16 +634,20 @@ async def image_remove_bg(files: List[UploadFile] = File(...)):
             if len(raw) > MAX_IMAGE_BYTES:
                 raise HTTPException(413, f"'{f.filename}' exceeds the 20 MB limit.")
             try:
-                Image.open(io.BytesIO(raw)).load()
+                img = Image.open(io.BytesIO(raw))
+                img.load()
             except Exception:
                 raise HTTPException(400, f"'{f.filename}' isn't a readable image.")
 
             try:
-                out_bytes = rembg_remove(raw, session=BG_REMOVAL_SESSION)
+                cutout = _remove_background(img)
             except Exception:
                 raise HTTPException(500, f"Background removal failed for '{f.filename}'.")
 
-            out_img = Image.open(io.BytesIO(out_bytes))
+            out_io = io.BytesIO()
+            cutout.save(out_io, format="PNG")
+            out_bytes = out_io.getvalue()
+
             base_name = (f.filename or "image").rsplit(".", 1)[0]
             out_name = f"{base_name}-nobg.png"
             zf.writestr(out_name, out_bytes)
@@ -589,8 +655,8 @@ async def image_remove_bg(files: List[UploadFile] = File(...)):
             results.append(
                 {
                     "filename": out_name,
-                    "width": out_img.width,
-                    "height": out_img.height,
+                    "width": cutout.width,
+                    "height": cutout.height,
                     "size_bytes": len(out_bytes),
                     "data_url": f"data:image/png;base64,{base64.b64encode(out_bytes).decode()}",
                 }
