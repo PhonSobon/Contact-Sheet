@@ -90,6 +90,7 @@
   /* ---------- mode switch (film-strip tabs) ---------- */
   .switch{
     display:flex;
+    flex-wrap:wrap;
     gap:2px;
     margin:36px 0 40px;
     border:1px solid var(--line);
@@ -559,10 +560,12 @@
   <div class="switch" role="tablist" aria-label="Conversion mode">
     <button class="active" id="tab-p2i" role="tab" aria-selected="true"><span class="num">01</span> PDF → Images</button>
     <button id="tab-i2p" role="tab" aria-selected="false"><span class="num">02</span> Images → PDF</button>
-    <button id="tab-edit" role="tab" aria-selected="false"><span class="num">03</span> Edit PDF</button>
-    <button id="tab-compress" role="tab" aria-selected="false"><span class="num">04</span> Compress</button>
-    <button id="tab-stamp" role="tab" aria-selected="false"><span class="num">05</span> Stamp</button>
-    <button id="tab-removebg" role="tab" aria-selected="false"><span class="num">06</span> Remove BG</button>
+    <button id="tab-combine" role="tab" aria-selected="false"><span class="num">03</span> Combine PDF</button>
+    <button id="tab-edit" role="tab" aria-selected="false"><span class="num">04</span> Edit PDF</button>
+    <button id="tab-compress" role="tab" aria-selected="false"><span class="num">05</span> Compress</button>
+    <button id="tab-stamp" role="tab" aria-selected="false"><span class="num">06</span> Stamp</button>
+    <button id="tab-crop" role="tab" aria-selected="false"><span class="num">07</span> Crop / Resize</button>
+    <button id="tab-removebg" role="tab" aria-selected="false"><span class="num">08</span> Remove BG</button>
   </div>
 
   <!-- ============ PDF -> IMAGES ============ -->
@@ -659,6 +662,52 @@
           <div style="padding:36px 12px;text-align:center;">
             <div style="font-family:'Space Grotesk',sans-serif;font-size:15px;margin-bottom:14px;">converted.pdf</div>
             <a class="mono" id="link-pdf" href="#" download="converted.pdf" style="display:inline-block;padding:10px 18px;background:var(--amber);color:#14161b;border-radius:2px;text-decoration:none;font-size:12px;">↓ Download PDF</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ COMBINE PDF ============ -->
+  <section class="panel" id="panel-combine">
+    <div class="frame" id="frame-combine">
+      <div class="sprockets left" id="sprL-combine"></div>
+      <div class="sprockets right" id="sprR-combine"></div>
+      <div class="scanline" id="scan-combine"></div>
+
+      <div class="dropzone" id="drop-combine" tabindex="0" role="button" aria-label="Choose PDF files to combine">
+        <div class="glyph">PDF</div>
+        <div class="primary" id="drop-combine-primary">Drop PDFs here, or click to choose files</div>
+        <div class="secondary">.PDF - UP TO 10 FILES - UP TO 60 PAGES TOTAL</div>
+        <input type="file" id="file-combine" accept="application/pdf,.pdf" multiple />
+      </div>
+
+      <div class="hint" id="combine-hint" style="display:none;">Order below sets the combined PDF order - use up/down to rearrange.</div>
+      <div class="filmstrip" id="combine-list"></div>
+
+      <div class="controls" id="controls-combine" style="display:none;">
+        <div class="field">
+          <label for="combine-name">Output filename</label>
+          <input type="text" id="combine-name" value="combined.pdf" class="mono" />
+        </div>
+        <div class="spacer"></div>
+        <button class="primary-btn" id="btn-combine" disabled>Combine PDF</button>
+      </div>
+
+      <div class="status-line" id="status-combine"></div>
+    </div>
+
+    <div class="results" id="results-combine" style="display:none;">
+      <div class="results-head">
+        <h2>Output</h2>
+        <div class="results-meta" id="meta-combine"></div>
+      </div>
+      <div class="grid" style="grid-template-columns:1fr;max-width:280px;">
+        <div class="print-card">
+          <div class="sprocket-strip"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+          <div style="padding:36px 12px;text-align:center;">
+            <div style="font-family:'Space Grotesk',sans-serif;font-size:15px;margin-bottom:14px;" id="combine-out-name">combined.pdf</div>
+            <a class="mono" id="link-combine" href="#" download="combined.pdf" style="display:inline-block;padding:10px 18px;background:var(--amber);color:#14161b;border-radius:2px;text-decoration:none;font-size:12px;">Download PDF</a>
           </div>
         </div>
       </div>
@@ -969,6 +1018,106 @@
     </div>
   </section>
 
+  <!-- ============ CROP / RESIZE PDF ============ -->
+  <section class="panel" id="panel-crop">
+    <div class="frame" id="frame-crop">
+      <div class="sprockets left" id="sprL-crop"></div>
+      <div class="sprockets right" id="sprR-crop"></div>
+      <div class="scanline" id="scan-crop"></div>
+
+      <div class="dropzone" id="drop-crop" tabindex="0" role="button" aria-label="Choose a PDF to crop or resize">
+        <div class="glyph">â‡Š</div>
+        <div class="primary" id="drop-crop-primary">Drop a PDF here, or click to choose one</div>
+        <div class="secondary">.PDF Â· UP TO 40MB Â· UP TO 60 PAGES</div>
+        <input type="file" id="file-crop" accept="application/pdf,.pdf" />
+      </div>
+
+      <div class="stamp-section">
+        <div class="stamp-section-title">Crop margins</div>
+        <div class="controls" style="border-top:none;padding-top:0;margin-top:14px;">
+          <div class="field">
+            <label for="crop-unit">Unit</label>
+            <select id="crop-unit">
+              <option value="mm" selected>mm</option>
+              <option value="in">in</option>
+              <option value="pt">pt</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="crop-top">Top</label>
+            <input type="number" id="crop-top" min="0" step="1" value="0" />
+          </div>
+          <div class="field">
+            <label for="crop-right">Right</label>
+            <input type="number" id="crop-right" min="0" step="1" value="0" />
+          </div>
+          <div class="field">
+            <label for="crop-bottom">Bottom</label>
+            <input type="number" id="crop-bottom" min="0" step="1" value="0" />
+          </div>
+          <div class="field">
+            <label for="crop-left">Left</label>
+            <input type="number" id="crop-left" min="0" step="1" value="0" />
+          </div>
+        </div>
+      </div>
+
+      <div class="stamp-section">
+        <div class="stamp-section-title">Output page</div>
+        <div class="controls" style="border-top:none;padding-top:0;margin-top:14px;">
+          <div class="field">
+            <label for="crop-page-size">Size</label>
+            <select id="crop-page-size">
+              <option value="cropped" selected>Cropped size</option>
+              <option value="a4">A4</option>
+              <option value="letter">Letter</option>
+              <option value="custom">Custom</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="crop-orientation">Orientation</label>
+            <select id="crop-orientation">
+              <option value="auto" selected>Auto</option>
+              <option value="portrait">Portrait</option>
+              <option value="landscape">Landscape</option>
+            </select>
+          </div>
+          <div class="field crop-custom-field" style="display:none;">
+            <label for="crop-custom-width">Width</label>
+            <input type="number" id="crop-custom-width" min="1" step="1" value="210" />
+          </div>
+          <div class="field crop-custom-field" style="display:none;">
+            <label for="crop-custom-height">Height</label>
+            <input type="number" id="crop-custom-height" min="1" step="1" value="297" />
+          </div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <div class="spacer"></div>
+        <button class="primary-btn" id="btn-crop" disabled>Apply Crop / Resize</button>
+      </div>
+
+      <div class="status-line" id="status-crop"></div>
+    </div>
+
+    <div class="results" id="results-crop" style="display:none;">
+      <div class="results-head">
+        <h2>Output</h2>
+        <div class="results-meta" id="meta-crop"></div>
+      </div>
+      <div class="grid" style="grid-template-columns:1fr;max-width:280px;">
+        <div class="print-card">
+          <div class="sprocket-strip"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+          <div style="padding:36px 12px;text-align:center;">
+            <div style="font-family:'Space Grotesk',sans-serif;font-size:15px;margin-bottom:14px;" id="crop-out-name">cropped.pdf</div>
+            <a class="mono" id="link-crop" href="#" download="cropped.pdf" style="display:inline-block;padding:10px 18px;background:var(--amber);color:#14161b;border-radius:2px;text-decoration:none;font-size:12px;">â†“ Download PDF</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- ============ REMOVE BACKGROUND ============ -->
   <section class="panel" id="panel-removebg">
     <div class="frame" id="frame-removebg">
@@ -1026,7 +1175,7 @@
       el.appendChild(s);
     }
   }
-  ['sprL-p2i','sprR-p2i','sprL-i2p','sprR-i2p','sprL-edit','sprR-edit','sprL-compress','sprR-compress','sprL-stamp','sprR-stamp','sprL-removebg','sprR-removebg'].forEach(id=>{
+  ['sprL-p2i','sprR-p2i','sprL-i2p','sprR-i2p','sprL-combine','sprR-combine','sprL-edit','sprR-edit','sprL-compress','sprR-compress','sprL-stamp','sprR-stamp','sprL-crop','sprR-crop','sprL-removebg','sprR-removebg'].forEach(id=>{
     paintSprockets(document.getElementById(id), 14);
   });
 
@@ -1034,9 +1183,11 @@
   const tabs = {
     'p2i': { btn: document.getElementById('tab-p2i'), panel: document.getElementById('panel-p2i') },
     'i2p': { btn: document.getElementById('tab-i2p'), panel: document.getElementById('panel-i2p') },
+    'combine': { btn: document.getElementById('tab-combine'), panel: document.getElementById('panel-combine') },
     'edit': { btn: document.getElementById('tab-edit'), panel: document.getElementById('panel-edit') },
     'compress': { btn: document.getElementById('tab-compress'), panel: document.getElementById('panel-compress') },
     'stamp': { btn: document.getElementById('tab-stamp'), panel: document.getElementById('panel-stamp') },
+    'crop': { btn: document.getElementById('tab-crop'), panel: document.getElementById('panel-crop') },
     'removebg': { btn: document.getElementById('tab-removebg'), panel: document.getElementById('panel-removebg') },
   };
 
@@ -1309,7 +1460,134 @@
   })();
 
   // =========================================================
-  // PANEL 3: EDIT PDF (merge / reorder / rotate / delete / split)
+  // PANEL 3: COMBINE PDF
+  // =========================================================
+  (function(){
+    const drop = document.getElementById('drop-combine');
+    const fileInput = document.getElementById('file-combine');
+    const primary = document.getElementById('drop-combine-primary');
+    const list = document.getElementById('combine-list');
+    const hint = document.getElementById('combine-hint');
+    const controls = document.getElementById('controls-combine');
+    const btn = document.getElementById('btn-combine');
+    const status = document.getElementById('status-combine');
+    const scan = document.getElementById('scan-combine');
+    const resultsWrap = document.getElementById('results-combine');
+    const meta = document.getElementById('meta-combine');
+    const nameInput = document.getElementById('combine-name');
+    const link = document.getElementById('link-combine');
+    const outNameLabel = document.getElementById('combine-out-name');
+
+    let staged = [];
+
+    function setStatus(msg, kind){
+      status.textContent = msg || '';
+      status.className = 'status-line' + (kind ? ' ' + kind : '');
+    }
+
+    function renderList(){
+      list.innerHTML = '';
+      staged.forEach((file, idx)=>{
+        const el = document.createElement('div');
+        el.className = 'film-item';
+        el.innerHTML = `
+          <div class="thumb-wrap"><div class="mono" style="color:var(--amber);font-size:24px;">PDF</div></div>
+          <div class="film-foot">
+            <span class="film-name" title="${file.name}">${idx+1}. ${file.name}</span>
+            <div class="film-order">
+              <button data-act="up" data-idx="${idx}" aria-label="Move earlier">up</button>
+              <button data-act="down" data-idx="${idx}" aria-label="Move later">down</button>
+              <button data-act="remove" data-idx="${idx}" class="remove" aria-label="Remove">x</button>
+            </div>
+          </div>
+        `;
+        list.appendChild(el);
+      });
+
+      const hasFiles = staged.length > 0;
+      primary.textContent = hasFiles
+        ? staged.length + ' PDF' + (staged.length===1?'':'s') + ' selected'
+        : 'Drop PDFs here, or click to choose files';
+      hint.style.display = hasFiles ? 'block' : 'none';
+      controls.style.display = hasFiles ? 'flex' : 'none';
+      btn.disabled = staged.length < 2;
+      if(!hasFiles) resultsWrap.style.display = 'none';
+    }
+
+    function addFiles(fileList){
+      const pdfs = Array.from(fileList).filter(f=> f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
+      if(pdfs.length === 0){
+        setStatus('Those do not look like PDFs.', 'error');
+        return;
+      }
+      staged = staged.concat(pdfs).slice(0, 10);
+      renderList();
+      resultsWrap.style.display = 'none';
+      setStatus(staged.length < 2 ? 'Add one more PDF to combine.' : '');
+    }
+
+    drop.addEventListener('click', ()=>fileInput.click());
+    drop.addEventListener('keydown', e=>{ if(e.key==='Enter' || e.key===' '){ e.preventDefault(); fileInput.click(); }});
+    fileInput.addEventListener('change', e=>{ addFiles(e.target.files); fileInput.value=''; });
+    ['dragenter','dragover'].forEach(evt=> drop.addEventListener(evt, e=>{ e.preventDefault(); drop.classList.add('drag'); }));
+    ['dragleave','drop'].forEach(evt=> drop.addEventListener(evt, e=>{ e.preventDefault(); drop.classList.remove('drag'); }));
+    drop.addEventListener('drop', e=> addFiles(e.dataTransfer.files));
+
+    list.addEventListener('click', e=>{
+      const b = e.target.closest('button');
+      if(!b) return;
+      const idx = parseInt(b.dataset.idx, 10);
+      const act = b.dataset.act;
+      if(act === 'remove'){
+        staged.splice(idx, 1);
+      } else if(act === 'up' && idx > 0){
+        [staged[idx-1], staged[idx]] = [staged[idx], staged[idx-1]];
+      } else if(act === 'down' && idx < staged.length-1){
+        [staged[idx+1], staged[idx]] = [staged[idx], staged[idx+1]];
+      }
+      renderList();
+      setStatus(staged.length === 1 ? 'Add one more PDF to combine.' : '');
+    });
+
+    btn.addEventListener('click', async ()=>{
+      if(staged.length < 2) return;
+      btn.disabled = true;
+      scan.classList.add('active');
+      setStatus('Combining ' + staged.length + ' PDFs...');
+      resultsWrap.style.display = 'none';
+
+      const outName = (nameInput.value || 'combined.pdf').trim() || 'combined.pdf';
+      const form = new FormData();
+      staged.forEach(f=> form.append('files', f));
+      form.append('output_filename', outName);
+
+      try{
+        const res = await fetch(API_BASE + '/api/pdf/combine', { method:'POST', body: form });
+        if(!res.ok){
+          const err = await res.json().catch(()=>({detail:'Could not combine those PDFs.'}));
+          throw new Error(err.detail || 'Could not combine those PDFs.');
+        }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const finalName = outName.toLowerCase().endsWith('.pdf') ? outName : outName + '.pdf';
+        link.href = url;
+        link.download = finalName;
+        outNameLabel.textContent = finalName;
+        const pages = res.headers.get('X-Output-Pages');
+        meta.textContent = (pages ? pages + ' page' + (pages==='1'?'':'s') + ' - ' : '') + bytesToSize(blob.size);
+        resultsWrap.style.display = 'block';
+        setStatus('Done.', 'ok');
+      }catch(err){
+        setStatus(err.message || 'Something went wrong.', 'error');
+      }finally{
+        scan.classList.remove('active');
+        btn.disabled = staged.length < 2;
+      }
+    });
+  })();
+
+  // =========================================================
+  // PANEL 4: EDIT PDF (merge / reorder / rotate / delete / split)
   // =========================================================
   (function(){
     const drop = document.getElementById('drop-edit');
@@ -1820,7 +2098,119 @@
   })();
 
   // =========================================================
-  // PANEL 6: REMOVE BACKGROUND
+  // PANEL 6: CROP / RESIZE PDF
+  // =========================================================
+  (function(){
+    const drop = document.getElementById('drop-crop');
+    const fileInput = document.getElementById('file-crop');
+    const primary = document.getElementById('drop-crop-primary');
+    const btn = document.getElementById('btn-crop');
+    const status = document.getElementById('status-crop');
+    const scan = document.getElementById('scan-crop');
+    const resultsWrap = document.getElementById('results-crop');
+    const meta = document.getElementById('meta-crop');
+    const linkCrop = document.getElementById('link-crop');
+    const outNameLabel = document.getElementById('crop-out-name');
+    const pageSize = document.getElementById('crop-page-size');
+    const customFields = Array.from(document.querySelectorAll('.crop-custom-field'));
+
+    let currentFile = null;
+
+    function setStatus(msg, kind){
+      status.textContent = msg || '';
+      status.className = 'status-line' + (kind ? ' ' + kind : '');
+    }
+
+    function setFile(f){
+      if(!f) return;
+      if(!(f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'))){
+        setStatus('That doesn\'t look like a PDF.', 'error');
+        return;
+      }
+      currentFile = f;
+      primary.textContent = f.name + ' â€” ' + bytesToSize(f.size);
+      btn.disabled = false;
+      setStatus('');
+      resultsWrap.style.display = 'none';
+    }
+
+    function numberValue(id){
+      const value = Number(document.getElementById(id).value);
+      return Number.isFinite(value) ? value : 0;
+    }
+
+    function syncCustomFields(){
+      const show = pageSize.value === 'custom';
+      customFields.forEach(el=>{ el.style.display = show ? 'flex' : 'none'; });
+    }
+
+    pageSize.addEventListener('change', syncCustomFields);
+    syncCustomFields();
+
+    drop.addEventListener('click', ()=>fileInput.click());
+    drop.addEventListener('keydown', e=>{ if(e.key==='Enter' || e.key===' '){ e.preventDefault(); fileInput.click(); }});
+    fileInput.addEventListener('change', e=> setFile(e.target.files[0]));
+    ['dragenter','dragover'].forEach(evt=> drop.addEventListener(evt, e=>{ e.preventDefault(); drop.classList.add('drag'); }));
+    ['dragleave','drop'].forEach(evt=> drop.addEventListener(evt, e=>{ e.preventDefault(); drop.classList.remove('drag'); }));
+    drop.addEventListener('drop', e=> setFile(e.dataTransfer.files[0]));
+
+    btn.addEventListener('click', async ()=>{
+      if(!currentFile) return;
+
+      const margins = ['crop-top','crop-right','crop-bottom','crop-left'].map(numberValue);
+      if(margins.some(v=>v < 0)){
+        setStatus('Crop margins cannot be negative.', 'error');
+        return;
+      }
+      if(pageSize.value === 'custom' && (numberValue('crop-custom-width') <= 0 || numberValue('crop-custom-height') <= 0)){
+        setStatus('Custom width and height must be greater than zero.', 'error');
+        return;
+      }
+
+      btn.disabled = true;
+      scan.classList.add('active');
+      setStatus('Cropping ' + currentFile.name + 'â€¦');
+      resultsWrap.style.display = 'none';
+
+      const form = new FormData();
+      form.append('file', currentFile);
+      form.append('unit', document.getElementById('crop-unit').value);
+      form.append('margin_top', numberValue('crop-top'));
+      form.append('margin_right', numberValue('crop-right'));
+      form.append('margin_bottom', numberValue('crop-bottom'));
+      form.append('margin_left', numberValue('crop-left'));
+      form.append('page_size', pageSize.value);
+      form.append('orientation', document.getElementById('crop-orientation').value);
+      form.append('custom_width', numberValue('crop-custom-width'));
+      form.append('custom_height', numberValue('crop-custom-height'));
+
+      try{
+        const res = await fetch(API_BASE + '/api/pdf/crop-resize', { method:'POST', body: form });
+        if(!res.ok){
+          const err = await res.json().catch(()=>({detail:'Crop / resize failed.'}));
+          throw new Error(err.detail || 'Crop / resize failed.');
+        }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const suffix = pageSize.value === 'cropped' ? '-cropped.pdf' : '-resized.pdf';
+        const outName = currentFile.name.replace(/\.pdf$/i, '') + suffix;
+        linkCrop.href = url;
+        linkCrop.download = outName;
+        outNameLabel.textContent = outName;
+        meta.textContent = bytesToSize(blob.size);
+        resultsWrap.style.display = 'block';
+        setStatus('Done.', 'ok');
+      }catch(err){
+        setStatus(err.message || 'Something went wrong.', 'error');
+      }finally{
+        scan.classList.remove('active');
+        btn.disabled = false;
+      }
+    });
+  })();
+
+  // =========================================================
+  // PANEL 7: REMOVE BACKGROUND
   // =========================================================
   (function(){
     const drop = document.getElementById('drop-removebg');

@@ -3,11 +3,14 @@ Contact Sheet — PDF <-> Image conversion + editing API
 Endpoints:
   POST /api/pdf-to-images       -> multipart PDF in, JSON (thumbnails + zip) out
   POST /api/images-to-pdf       -> multipart images in, application/pdf out
+  POST /api/pdf/combine         -> multipart PDF(s) in, application/pdf out
   POST /api/pdf/inspect         -> multipart PDF(s) in, JSON page thumbnails out (for the page editor)
   POST /api/pdf/build           -> multipart PDF(s) + a page "plan" in, application/pdf out
                                     (drives merge, split/extract, delete pages, reorder, rotate, compress)
   POST /api/pdf/stamp           -> multipart PDF in, application/pdf out
                                     (watermark, page numbers, header/footer text)
+  POST /api/pdf/crop-resize     -> multipart PDF in, application/pdf out
+                                    (crop margins and optionally normalize page size)
   POST /api/image/compress      -> multipart image(s) in, JSON (compressed results + zip) out
   POST /api/image/remove-bg     -> multipart image(s) in, JSON (cutout PNGs + zip) out
   GET  /api/health              -> liveness check
@@ -58,12 +61,17 @@ STATIC_DIR = Path(__file__).parent / "static"
 MAX_PDF_BYTES = 40 * 1024 * 1024       # 40 MB
 MAX_IMAGE_BYTES = 20 * 1024 * 1024     # 20 MB per image
 MAX_PAGES = 60                          # safety cap for JSON+thumbnail payload
+MAX_COMBINE_PDFS = 10                    # simple combine flow, in selected order
 MAX_BG_REMOVAL_IMAGES = 15              # this one's CPU-heavy, keep batches small
 ALLOWED_IMAGE_FORMATS = {"png", "jpg", "jpeg", "webp"}
 ALLOWED_OUTPUT_FORMATS = {"png", "jpg", "jpeg", "webp"}
 STAMP_POSITIONS = {
     "top-left", "top-center", "top-right",
     "bottom-left", "bottom-center", "bottom-right",
+}
+PDF_SIZE_PRESETS = {
+    "a4": (595.276, 841.89),
+    "letter": (612.0, 792.0),
 }
 
 U2NETP_MODEL_PATH = Path(
@@ -252,6 +260,68 @@ async def images_to_pdf(
 
     headers = {"Content-Disposition": 'attachment; filename="converted.pdf"'}
     return StreamingResponse(pdf_buffer, media_type="application/pdf", headers=headers)
+
+
+@app.post("/api/pdf/combine")
+async def pdf_combine(
+    files: List[UploadFile] = File(...),
+    output_filename: str = Form("combined.pdf"),
+):
+    if len(files) < 2:
+        raise HTTPException(400, "Please upload at least two PDFs to combine.")
+    if len(files) > MAX_COMBINE_PDFS:
+        raise HTTPException(400, f"Up to {MAX_COMBINE_PDFS} PDFs at a time.")
+
+    out = fitz.open()
+    opened_docs = []
+    total_pages = 0
+    try:
+        for f in files:
+            if not (
+                f.content_type in ("application/pdf", "application/x-pdf")
+                or (f.filename or "").lower().endswith(".pdf")
+            ):
+                raise HTTPException(400, f"'{f.filename}' isn't a PDF.")
+
+            raw = await f.read()
+            if len(raw) > MAX_PDF_BYTES:
+                raise HTTPException(413, f"'{f.filename}' exceeds the 40 MB limit.")
+
+            try:
+                doc = fitz.open(stream=raw, filetype="pdf")
+            except Exception:
+                raise HTTPException(400, f"Could not read '{f.filename}' - it may be corrupted or encrypted.")
+
+            if doc.page_count == 0:
+                doc.close()
+                raise HTTPException(400, f"'{f.filename}' has no pages.")
+
+            total_pages += doc.page_count
+            if total_pages > MAX_PAGES:
+                doc.close()
+                raise HTTPException(400, f"Combined page count exceeds the {MAX_PAGES}-page demo limit.")
+
+            opened_docs.append(doc)
+            out.insert_pdf(doc)
+
+        buf = io.BytesIO()
+        out.save(buf, garbage=4, deflate=True)
+    finally:
+        out.close()
+        for doc in opened_docs:
+            doc.close()
+
+    buf.seek(0)
+    safe_name = (output_filename or "combined.pdf").strip() or "combined.pdf"
+    if not safe_name.lower().endswith(".pdf"):
+        safe_name += ".pdf"
+    headers = {
+        "Content-Disposition": f'attachment; filename="{safe_name}"',
+        "X-Output-Pages": str(total_pages),
+        "X-Output-Bytes": str(len(buf.getvalue())),
+        "Access-Control-Expose-Headers": "X-Output-Pages, X-Output-Bytes",
+    }
+    return StreamingResponse(buf, media_type="application/pdf", headers=headers)
 
 
 @app.post("/api/pdf/inspect")
@@ -514,6 +584,26 @@ def _position_point(rect: "fitz.Rect", position: str, margin: float = 28):
     return mapping.get(position, mapping["bottom-center"])
 
 
+def _length_to_points(value: float, unit: str) -> float:
+    unit = (unit or "mm").lower().strip()
+    if unit == "pt":
+        return value
+    if unit == "in":
+        return value * 72.0
+    if unit == "mm":
+        return value * 72.0 / 25.4
+    raise HTTPException(400, "Unit must be mm, in, or pt.")
+
+
+def _centered_fit_rect(container: "fitz.Rect", width: float, height: float) -> "fitz.Rect":
+    scale = min(container.width / width, container.height / height)
+    fitted_w = width * scale
+    fitted_h = height * scale
+    x0 = container.x0 + (container.width - fitted_w) / 2
+    y0 = container.y0 + (container.height - fitted_h) / 2
+    return fitz.Rect(x0, y0, x0 + fitted_w, y0 + fitted_h)
+
+
 @app.post("/api/pdf/stamp")
 async def pdf_stamp(
     file: UploadFile = File(...),
@@ -615,6 +705,93 @@ async def pdf_stamp(
 
     base_name = (file.filename or "document").rsplit(".", 1)[0]
     out_name = f"{base_name}-stamped.pdf"
+    headers = {"Content-Disposition": f'attachment; filename="{out_name}"'}
+    return StreamingResponse(buf, media_type="application/pdf", headers=headers)
+
+
+@app.post("/api/pdf/crop-resize")
+async def pdf_crop_resize(
+    file: UploadFile = File(...),
+    unit: str = Form("mm"),
+    margin_top: float = Form(0),
+    margin_right: float = Form(0),
+    margin_bottom: float = Form(0),
+    margin_left: float = Form(0),
+    page_size: str = Form("cropped"),  # "cropped" | "a4" | "letter" | "custom"
+    custom_width: float = Form(0),
+    custom_height: float = Form(0),
+    orientation: str = Form("auto"),  # "auto" | "portrait" | "landscape"
+):
+    if not (file.content_type in ("application/pdf", "application/x-pdf") or (file.filename or "").lower().endswith(".pdf")):
+        raise HTTPException(400, "Please upload a PDF file.")
+
+    page_size = (page_size or "cropped").lower().strip()
+    orientation = (orientation or "auto").lower().strip()
+    if page_size not in {"cropped", "a4", "letter", "custom"}:
+        raise HTTPException(400, "Page size must be cropped, a4, letter, or custom.")
+    if orientation not in {"auto", "portrait", "landscape"}:
+        raise HTTPException(400, "Orientation must be auto, portrait, or landscape.")
+    if min(margin_top, margin_right, margin_bottom, margin_left) < 0:
+        raise HTTPException(400, "Crop margins cannot be negative.")
+
+    raw = await file.read()
+    if len(raw) > MAX_PDF_BYTES:
+        raise HTTPException(413, "PDF exceeds the 40 MB limit.")
+    try:
+        doc = fitz.open(stream=raw, filetype="pdf")
+    except Exception:
+        raise HTTPException(400, "Could not read this PDF â€” it may be corrupted or encrypted.")
+    if doc.page_count == 0:
+        raise HTTPException(400, "This PDF has no pages.")
+    if doc.page_count > MAX_PAGES:
+        raise HTTPException(400, f"This PDF has {doc.page_count} pages; the demo limit is {MAX_PAGES}.")
+
+    top = _length_to_points(margin_top, unit)
+    right = _length_to_points(margin_right, unit)
+    bottom = _length_to_points(margin_bottom, unit)
+    left = _length_to_points(margin_left, unit)
+
+    if page_size == "custom":
+        if custom_width <= 0 or custom_height <= 0:
+            raise HTTPException(400, "Custom width and height must be greater than zero.")
+        preset_size = (_length_to_points(custom_width, unit), _length_to_points(custom_height, unit))
+    elif page_size in PDF_SIZE_PRESETS:
+        preset_size = PDF_SIZE_PRESETS[page_size]
+    else:
+        preset_size = None
+
+    out = fitz.open()
+    try:
+        for page_index, page in enumerate(doc):
+            rect = page.rect
+            clip = fitz.Rect(rect.x0 + left, rect.y0 + top, rect.x1 - right, rect.y1 - bottom)
+            if clip.width < 12 or clip.height < 12:
+                raise HTTPException(400, f"Crop margins remove too much of page {page_index + 1}.")
+
+            if preset_size:
+                page_w, page_h = preset_size
+                if orientation == "landscape" or (orientation == "auto" and clip.width > clip.height):
+                    page_w, page_h = max(page_w, page_h), min(page_w, page_h)
+                elif orientation == "portrait" or orientation == "auto":
+                    page_w, page_h = min(page_w, page_h), max(page_w, page_h)
+            else:
+                page_w, page_h = clip.width, clip.height
+
+            new_page = out.new_page(width=page_w, height=page_h)
+            target = fitz.Rect(0, 0, page_w, page_h)
+            if preset_size:
+                target = _centered_fit_rect(target, clip.width, clip.height)
+            new_page.show_pdf_page(target, doc, page_index, clip=clip, keep_proportion=True)
+
+        buf = io.BytesIO()
+        out.save(buf, garbage=4, deflate=True)
+    finally:
+        out.close()
+        doc.close()
+
+    buf.seek(0)
+    base_name = (file.filename or "document").rsplit(".", 1)[0]
+    out_name = f"{base_name}-cropped.pdf" if page_size == "cropped" else f"{base_name}-resized.pdf"
     headers = {"Content-Disposition": f'attachment; filename="{out_name}"'}
     return StreamingResponse(buf, media_type="application/pdf", headers=headers)
 

@@ -27,9 +27,11 @@ Open **http://127.0.0.1:8000** — that's it. The page and the API are on the sa
 | GET    | `/`                   | —                                                                              | the app (index.html)                                                |
 | POST   | `/api/pdf-to-images`  | `file` (PDF), `dpi` (int, default 150), `output_format` (`png`/`jpg`/`webp`) | JSON: page thumbnails (base64) + a base64-encoded ZIP of all pages  |
 | POST   | `/api/images-to-pdf`  | `files` (one or more images, in desired page order)                          | `application/pdf` binary stream                                     |
+| POST   | `/api/pdf/combine`    | `files` (2-10 PDFs, in desired order), `output_filename`                    | `application/pdf` combined binary stream                            |
 | POST   | `/api/pdf/inspect`    | `files` (one or more PDFs), `thumb_dpi` (int, default 90)                    | JSON: page thumbnails per source file, for the page editor          |
 | POST   | `/api/pdf/build`      | `files`, `plan` (JSON page list), `compress`, `raster_dpi`, `raster_quality`, `output_filename` | `application/pdf` — drives merge, split/extract, delete, reorder, rotate, compress |
 | POST   | `/api/image/compress` | `files` (one or more images), `quality`, `max_dimension`, `output_format`   | JSON: compressed results (base64) + a base64-encoded ZIP            |
+| POST   | `/api/pdf/crop-resize` | `file` (PDF), crop margins, `page_size`, optional custom dimensions         | `application/pdf` cropped/resized PDF                               |
 | GET    | `/api/health`         | —                                                                              | `{"status": "ok"}`                                                   |
 
 Interactive API docs at `/docs`.
