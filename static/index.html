@@ -25,6 +25,53 @@
     --radius:2px;
   }
 
+  /* Light mode */
+  html.light-mode {
+    --ink:#ffffff;
+    --panel:#f5f5f5;
+    --panel-raised:#efefef;
+    --paper:#14161b;
+    --paper-dim:#3a3f48;
+    --amber:#ff9f1c;
+    --amber-dim:#d17a00;
+    --teal:#2fd3b3;
+    --line:#e0e0e0;
+    --line-soft:#e8e8e8;
+    --text:#14161b;
+    --text-muted:#666666;
+    --danger:#ff6b6b;
+  }
+
+  html.light-mode .print-card {
+    background:#14161b;
+    color:#ffffff;
+  }
+
+  html.light-mode .print-card .sprocket-strip {
+    background:#3a3f48;
+  }
+
+  html.light-mode .print-card .sprocket-strip span {
+    background:#ffffff;
+  }
+
+  html.light-mode .print-card img {
+    background:#f5f5f5;
+  }
+
+  html.light-mode .print-caption .meta {
+    color:#8a8f98;
+  }
+
+  html.light-mode .print-caption a {
+    color:#ff9f1c;
+    border-bottom-color:#ff9f1c;
+  }
+
+  html.light-mode .print-caption a:hover {
+    border-color:#ffb84d;
+  }
+
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
   body{
@@ -51,6 +98,41 @@
     padding:56px 0 40px;
     border-bottom:1px solid var(--line-soft);
     margin-bottom:48px;
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+  }
+
+  .theme-toggle {
+    appearance:none;
+    background:var(--panel-raised);
+    border:1px solid var(--line);
+    color:var(--text-muted);
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12px;
+    padding:8px 14px;
+    border-radius:var(--radius);
+    cursor:pointer;
+    transition:all .2s ease;
+    display:flex;
+    align-items:center;
+    gap:6px;
+    white-space:nowrap;
+  }
+
+  .theme-toggle:hover {
+    background:var(--panel);
+    color:var(--text);
+    border-color:var(--text-muted);
+  }
+
+  .theme-toggle:focus-visible {
+    outline:2px solid var(--teal);
+    outline-offset:2px;
+  }
+
+  .header-content {
+    flex:1;
   }
   .eyebrow{
     font-family:'IBM Plex Mono',monospace;
@@ -552,9 +634,15 @@
 <div class="wrap">
 
   <header class="top">
-    <div class="eyebrow">Local file converter</div>
-    <h1>Contact<br><span>Sheet.</span></h1>
-    <p class="lede">Run a PDF through the scanner and get pages back as images — or feed it prints and develop them into a single PDF. Nothing leaves your machine except the file you choose to convert.</p>
+    <div class="header-content">
+      <div class="eyebrow">Local file converter</div>
+      <h1>Contact<br><span>Sheet.</span></h1>
+      <p class="lede">Run a PDF through the scanner and get pages back as images — or feed it prints and develop them into a single PDF. Nothing leaves your machine except the file you choose to convert.</p>
+    </div>
+    <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+      <span id="theme-icon">🌙</span>
+      <span id="theme-label">Light</span>
+    </button>
   </header>
 
   <div class="switch" role="tablist" aria-label="Conversion mode">
@@ -1166,6 +1254,45 @@
   // cross-origin base URL is needed. Leave as '' unless you split the
   // frontend onto a different host later.
   const API_BASE = '';
+
+  // ---------- theme toggle ----------
+  const themeToggle = document.getElementById('theme-toggle');
+  const themeIcon = document.getElementById('theme-icon');
+  const themeLabel = document.getElementById('theme-label');
+  const html = document.documentElement;
+
+  // Load saved theme preference or use system preference
+  function initTheme(){
+    const saved = localStorage.getItem('theme-mode');
+    if(saved){
+      setTheme(saved);
+    }else{
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      setTheme(prefersDark ? 'dark' : 'light');
+    }
+  }
+
+  function setTheme(mode){
+    if(mode === 'light'){
+      html.classList.add('light-mode');
+      themeIcon.textContent = '🌙';
+      themeLabel.textContent = 'Light';
+    }else{
+      html.classList.remove('light-mode');
+      themeIcon.textContent = '☀️';
+      themeLabel.textContent = 'Dark';
+    }
+    localStorage.setItem('theme-mode', mode);
+  }
+
+  function toggleTheme(){
+    const current = html.classList.contains('light-mode') ? 'light' : 'dark';
+    const next = current === 'light' ? 'dark' : 'light';
+    setTheme(next);
+  }
+
+  themeToggle.addEventListener('click', toggleTheme);
+  initTheme();
 
   // ---------- sprocket decoration ----------
   function paintSprockets(el, count){
