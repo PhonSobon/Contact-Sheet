@@ -455,6 +455,30 @@
     border-bottom:1px solid transparent;
   }
   .print-caption a:hover{border-color:var(--accent);}
+  .remove-page{
+    position:absolute;
+    top:6px;
+    right:6px;
+    z-index:2;
+    width:24px;
+    height:24px;
+    border-radius:50%;
+    border:1px solid var(--border);
+    background:var(--surface);
+    color:var(--text);
+    font-size:15px;
+    line-height:1;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .remove-page:hover{background:var(--danger);color:#fff;border-color:var(--danger);}
+  .print-card.removed{opacity:0.4;}
+  .print-card.removed .remove-page{background:var(--danger);color:#fff;border-color:var(--danger);}
+  .print-card.removed .remove-page::before{content:'↺';}
+  .print-card.removed .remove-page{font-size:0;}
+  .print-card.removed .remove-page::before{font-size:14px;}
 
   /* ---------- filmstrip (images -> pdf staged list) ---------- */
   .filmstrip{
@@ -678,7 +702,7 @@
       <div class="dropzone" id="drop-p2i" tabindex="0" role="button" aria-label="Choose a PDF file">
         <div class="glyph">⇊</div>
         <div class="primary" id="drop-p2i-primary">Drop a PDF here, or click to choose one</div>
-        <div class="secondary">.PDF · UP TO 40MB · UP TO 60 PAGES</div>
+        <div class="secondary">.PDF · UP TO 20MB · UP TO 400 PAGES</div>
         <input type="file" id="file-p2i" accept="application/pdf,.pdf" />
       </div>
 
@@ -780,7 +804,7 @@
       <div class="dropzone" id="drop-combine" tabindex="0" role="button" aria-label="Choose PDF files to combine">
         <div class="glyph">PDF</div>
         <div class="primary" id="drop-combine-primary">Drop PDFs here, or click to choose files</div>
-        <div class="secondary">.PDF - UP TO 10 FILES - UP TO 60 PAGES TOTAL</div>
+        <div class="secondary">.PDF - UP TO 10 FILES - UP TO 400 PAGES TOTAL</div>
         <input type="file" id="file-combine" accept="application/pdf,.pdf" multiple />
       </div>
 
@@ -827,7 +851,7 @@
       <div class="dropzone" id="drop-edit" tabindex="0" role="button" aria-label="Choose one or more PDFs">
         <div class="glyph">⇊</div>
         <div class="primary" id="drop-edit-primary">Drop one or more PDFs here, or click to choose</div>
-        <div class="secondary">.PDF · DROP SEVERAL TO MERGE THEM · UP TO 60 PAGES TOTAL</div>
+        <div class="secondary">.PDF · DROP SEVERAL TO MERGE THEM · UP TO 400 PAGES TOTAL</div>
         <input type="file" id="file-edit" accept="application/pdf,.pdf" multiple />
       </div>
 
@@ -999,7 +1023,7 @@
       <div class="dropzone" id="drop-stamp" tabindex="0" role="button" aria-label="Choose a PDF to stamp">
         <div class="glyph">⇊</div>
         <div class="primary" id="drop-stamp-primary">Drop a PDF here, or click to choose one</div>
-        <div class="secondary">.PDF · UP TO 40MB · UP TO 60 PAGES</div>
+        <div class="secondary">.PDF · UP TO 40MB · UP TO 400 PAGES</div>
         <input type="file" id="file-stamp" accept="application/pdf,.pdf" />
       </div>
 
@@ -1138,7 +1162,7 @@
       <div class="dropzone" id="drop-crop" tabindex="0" role="button" aria-label="Choose a PDF to crop or resize">
         <div class="glyph">PDF</div>
         <div class="primary" id="drop-crop-primary">Drop a PDF here, or click to choose one</div>
-        <div class="secondary">.PDF · UP TO 40MB · UP TO 60 PAGES</div>
+        <div class="secondary">.PDF · UP TO 40MB · UP TO 400 PAGES</div>
         <input type="file" id="file-crop" accept="application/pdf,.pdf" />
       </div>
 
@@ -1388,6 +1412,7 @@
     let currentFile = null;
     let zipBase64 = null;
     let zipFilename = 'images.zip';
+    let excludedPages = new Set();
 
     function setFile(f){
       if(!f) return;
@@ -1424,6 +1449,7 @@
 
     btn.addEventListener('click', async ()=>{
       if(!currentFile) return;
+      excludedPages = new Set();
       btn.disabled = true;
       scan.classList.add('active');
       setStatus('Scanning ' + currentFile.name + ' at ' + dpiSelect.value + ' DPI…');
@@ -1451,6 +1477,12 @@
       }
     });
 
+    function updateMetaCount(){
+      const remaining = grid.querySelectorAll('.print-card').length - excludedPages.size;
+      const removedNote = excludedPages.size ? ' · ' + excludedPages.size + ' removed' : '';
+      meta.textContent = remaining + ' page' + (remaining===1?'':'s') + ' will be included' + removedNote;
+    }
+
     function renderResults(data){
       grid.innerHTML = '';
       zipBase64 = data.zip_base64;
@@ -1458,27 +1490,66 @@
       meta.textContent = data.page_count + ' page' + (data.page_count===1?'':'s') + ' · ' + data.dpi + ' DPI · .' + data.format.toUpperCase();
 
       data.pages.forEach(p=>{
+        const pageNum = parseInt((p.filename.match(/-page-(\d+)\./) || [])[1], 10);
         const card = document.createElement('div');
         card.className = 'print-card';
         card.innerHTML = `
           <div class="sprocket-strip"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
-          <img src="${p.data_url}" alt="${p.filename}" loading="lazy" />
+          <button type="button" class="remove-page" title="Remove this page">×</button>
+          <img src="${p.thumb_data_url}" alt="${p.filename}" loading="lazy" />
           <div class="print-caption">
             <span class="fname">${p.filename}</span>
             <div class="meta">
               <span>${p.width}×${p.height} · ${bytesToSize(p.size_bytes)}</span>
-              <a href="${p.data_url}" download="${p.filename}">↓</a>
             </div>
           </div>
         `;
+        card.querySelector('.remove-page').addEventListener('click', ()=>{
+          if(!Number.isFinite(pageNum)) return;
+          if(excludedPages.has(pageNum)){
+            excludedPages.delete(pageNum);
+            card.classList.remove('removed');
+          } else {
+            excludedPages.add(pageNum);
+            card.classList.add('removed');
+          }
+          updateMetaCount();
+        });
         grid.appendChild(card);
       });
 
       resultsWrap.style.display = 'block';
     }
 
-    btnZip.addEventListener('click', ()=>{
+    btnZip.addEventListener('click', async ()=>{
       if(!zipBase64) return;
+
+      if(excludedPages.size){
+        btnZip.disabled = true;
+        setStatus('Rebuilding zip without removed pages…');
+        try{
+          const form = new FormData();
+          form.append('file', currentFile);
+          form.append('dpi', dpiSelect.value);
+          form.append('output_format', fmtSelect.value);
+          form.append('exclude_pages', Array.from(excludedPages).join(','));
+          const res = await fetch(API_BASE + '/api/pdf-to-images', { method:'POST', body: form });
+          if(!res.ok){
+            const err = await res.json().catch(()=>({detail:'Conversion failed.'}));
+            throw new Error(err.detail || 'Conversion failed.');
+          }
+          const data = await res.json();
+          zipBase64 = data.zip_base64;
+          zipFilename = data.zip_filename;
+          setStatus('Done — ' + data.page_count + ' page' + (data.page_count===1?'':'s') + ' in the zip.', 'ok');
+        }catch(err){
+          setStatus(err.message || 'Something went wrong.', 'error');
+          btnZip.disabled = false;
+          return;
+        }
+        btnZip.disabled = false;
+      }
+
       const byteChars = atob(zipBase64);
       const byteNumbers = new Array(byteChars.length);
       for(let i=0;i<byteChars.length;i++) byteNumbers[i] = byteChars.charCodeAt(i);

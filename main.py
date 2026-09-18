@@ -60,9 +60,14 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 MAX_PDF_BYTES = 40 * 1024 * 1024       # 40 MB
 MAX_IMAGE_BYTES = 20 * 1024 * 1024     # 20 MB per image
-MAX_PAGES = 60                          # safety cap for JSON+thumbnail payload
+MAX_PAGES = 400                         # safety cap for JSON+thumbnail payload
 MAX_COMBINE_PDFS = 10                    # simple combine flow, in selected order
 MAX_BG_REMOVAL_IMAGES = 15              # this one's CPU-heavy, keep batches small
+
+# PDF -> Images has its own input-size limit (20 MB) separate from
+# MAX_PDF_BYTES above, which is shared by the merge/build/stamp/crop tools.
+P2I_MAX_PDF_BYTES = 20 * 1024 * 1024   # 20 MB
+P2I_MAX_PAGES = 400
 ALLOWED_IMAGE_FORMATS = {"png", "jpg", "jpeg", "webp"}
 ALLOWED_OUTPUT_FORMATS = {"png", "jpg", "jpeg", "webp"}
 STAMP_POSITIONS = {
@@ -140,6 +145,7 @@ async def pdf_to_images(
     file: UploadFile = File(...),
     dpi: int = Form(150),
     output_format: str = Form("png"),
+    exclude_pages: str = Form(""),  # comma-separated 1-based page numbers to skip entirely
 ):
     output_format = output_format.lower().strip()
     if output_format not in ALLOWED_OUTPUT_FORMATS:
@@ -151,9 +157,14 @@ async def pdf_to_images(
     ).lower().endswith(".pdf"):
         raise HTTPException(400, "Please upload a PDF file.")
 
+    try:
+        excluded = {int(n) for n in exclude_pages.split(",") if n.strip()}
+    except ValueError:
+        raise HTTPException(400, "exclude_pages must be a comma-separated list of page numbers.")
+
     raw = await file.read()
-    if len(raw) > MAX_PDF_BYTES:
-        raise HTTPException(413, "PDF exceeds the 40 MB limit.")
+    if len(raw) > P2I_MAX_PDF_BYTES:
+        raise HTTPException(413, "PDF exceeds the 20 MB limit.")
 
     try:
         doc = fitz.open(stream=raw, filetype="pdf")
@@ -162,22 +173,58 @@ async def pdf_to_images(
 
     if doc.page_count == 0:
         raise HTTPException(400, "This PDF has no pages.")
-    if doc.page_count > MAX_PAGES:
+    if doc.page_count > P2I_MAX_PAGES:
         raise HTTPException(
-            400, f"This PDF has {doc.page_count} pages; the demo limit is {MAX_PAGES}."
+            400, f"This PDF has {doc.page_count} pages; the limit is {P2I_MAX_PAGES}."
         )
 
     zoom = dpi / 72.0
+
+    # Rough output-size estimate before doing any rendering, so an oversized
+    # request (many pages x high DPI, especially PNG) fails fast with a
+    # useful message instead of spending a minute rendering/encoding and
+    # then timing out or blowing past a proxy's response-size limit. PNG
+    # stores raw-ish pixels (~3 bytes/px before deflate, deflate barely
+    # helps on photo/scan content); JPEG/WEBP land far smaller per pixel.
+    total_pixels = sum(
+        (p.rect.width * zoom) * (p.rect.height * zoom)
+        for i, p in enumerate(doc, start=1)
+        if i not in excluded
+    )
+    bytes_per_pixel = 3.0 if output_format == "png" else 0.5
+    estimated_bytes = total_pixels * bytes_per_pixel
+    MAX_ESTIMATED_OUTPUT_BYTES = 200 * 1024 * 1024
+    if estimated_bytes > MAX_ESTIMATED_OUTPUT_BYTES:
+        raise HTTPException(
+            400,
+            f"This would produce roughly {estimated_bytes / (1024*1024):.0f} MB of images "
+            f"at {dpi} DPI ({output_format.upper()}), which is too large to process here. "
+            "Try a lower DPI, JPG/WEBP output, or fewer pages.",
+        )
+
     matrix = fitz.Matrix(zoom, zoom)
     pil_format = "JPEG" if output_format in ("jpg", "jpeg") else output_format.upper()
     ext = "jpg" if output_format in ("jpg", "jpeg") else output_format
     mime = f"image/{'jpeg' if ext == 'jpg' else ext}"
+
+    # Full-resolution pages only go into the zip. The JSON response also
+    # carries a small on-screen preview per page (capped width, JPEG) instead
+    # of the full-res image as a second base64 copy — at 150+ DPI over many
+    # pages, embedding every full-res image twice made responses balloon to
+    # hundreds of MB and time out (e.g. a 25-page PDF at 150 DPI PNG produced
+    # a ~440 MB response). The zip still contains the requested format/DPI
+    # untouched; only the preview is downsized.
+    THUMB_MAX_WIDTH = 220
+    thumb_zoom = min(zoom, THUMB_MAX_WIDTH / doc[0].rect.width)
+    thumb_matrix = fitz.Matrix(thumb_zoom, thumb_zoom)
 
     pages = []
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
         base_name = (file.filename or "document").rsplit(".", 1)[0]
         for i, page in enumerate(doc, start=1):
+            if i in excluded:
+                continue
             pix = page.get_pixmap(matrix=matrix, alpha=(ext == "png"))
 
             if ext == "png":
@@ -192,13 +239,19 @@ async def pdf_to_images(
             filename = f"{base_name}-page-{i:02d}.{ext}"
             zf.writestr(filename, img_bytes)
 
+            thumb_pix = page.get_pixmap(matrix=thumb_matrix, alpha=False)
+            thumb_img = Image.frombytes("RGB", (thumb_pix.width, thumb_pix.height), thumb_pix.samples)
+            thumb_io = io.BytesIO()
+            thumb_img.save(thumb_io, format="JPEG", quality=70)
+            thumb_data_url = f"data:image/jpeg;base64,{base64.b64encode(thumb_io.getvalue()).decode()}"
+
             pages.append(
                 {
                     "filename": filename,
                     "width": pix.width,
                     "height": pix.height,
                     "size_bytes": len(img_bytes),
-                    "data_url": f"data:{mime};base64,{base64.b64encode(img_bytes).decode()}",
+                    "thumb_data_url": thumb_data_url,
                 }
             )
 
@@ -226,7 +279,7 @@ async def images_to_pdf(
     if not files:
         raise HTTPException(400, "Please upload at least one image.")
     if len(files) > MAX_PAGES:
-        raise HTTPException(400, f"The demo limit is {MAX_PAGES} images per PDF.")
+        raise HTTPException(400, f"The limit is {MAX_PAGES} images per PDF.")
 
     images = []
     total_bytes = 0
@@ -299,7 +352,7 @@ async def pdf_combine(
             total_pages += doc.page_count
             if total_pages > MAX_PAGES:
                 doc.close()
-                raise HTTPException(400, f"Combined page count exceeds the {MAX_PAGES}-page demo limit.")
+                raise HTTPException(400, f"Combined page count exceeds the {MAX_PAGES}-page limit.")
 
             opened_docs.append(doc)
             out.insert_pdf(doc)
@@ -354,7 +407,7 @@ async def pdf_inspect(
 
         total_pages += doc.page_count
         if total_pages > MAX_PAGES:
-            raise HTTPException(400, f"Combined page count exceeds the {MAX_PAGES}-page demo limit.")
+            raise HTTPException(400, f"Combined page count exceeds the {MAX_PAGES}-page limit.")
 
         zoom = max(24, min(200, thumb_dpi)) / 72.0
         matrix = fitz.Matrix(zoom, zoom)
@@ -405,7 +458,7 @@ async def pdf_build(
     if not isinstance(plan_items, list) or len(plan_items) == 0:
         raise HTTPException(400, "The plan is empty — nothing to build.")
     if len(plan_items) > MAX_PAGES:
-        raise HTTPException(400, f"Output would exceed the {MAX_PAGES}-page demo limit.")
+        raise HTTPException(400, f"Output would exceed the {MAX_PAGES}-page limit.")
     if compress not in ("none", "optimize", "rasterize"):
         raise HTTPException(400, "Unknown compress mode.")
 
@@ -484,7 +537,7 @@ async def image_compress(
     if not files:
         raise HTTPException(400, "Please upload at least one image.")
     if len(files) > MAX_PAGES:
-        raise HTTPException(400, f"The demo limit is {MAX_PAGES} images at a time.")
+        raise HTTPException(400, f"The limit is {MAX_PAGES} images at a time.")
     output_format = output_format.lower().strip()
     if output_format not in ALLOWED_OUTPUT_FORMATS:
         raise HTTPException(400, f"Unsupported output format '{output_format}'.")
@@ -635,7 +688,7 @@ async def pdf_stamp(
     if doc.page_count == 0:
         raise HTTPException(400, "This PDF has no pages.")
     if doc.page_count > MAX_PAGES:
-        raise HTTPException(400, f"This PDF has {doc.page_count} pages; the demo limit is {MAX_PAGES}.")
+        raise HTTPException(400, f"This PDF has {doc.page_count} pages; the limit is {MAX_PAGES}.")
 
     for pos in (page_number_position, header_position, footer_position):
         if pos not in STAMP_POSITIONS:
@@ -744,7 +797,7 @@ async def pdf_crop_resize(
     if doc.page_count == 0:
         raise HTTPException(400, "This PDF has no pages.")
     if doc.page_count > MAX_PAGES:
-        raise HTTPException(400, f"This PDF has {doc.page_count} pages; the demo limit is {MAX_PAGES}.")
+        raise HTTPException(400, f"This PDF has {doc.page_count} pages; the limit is {MAX_PAGES}.")
 
     top = _length_to_points(margin_top, unit)
     right = _length_to_points(margin_right, unit)
