@@ -25,7 +25,7 @@ Open **http://127.0.0.1:8000** — that's it. The page and the API are on the sa
 | Method | Path                  | Body (multipart/form-data)                                                   | Returns                                                             |
 |--------|-----------------------|-------------------------------------------------------------------------------|--------------------------------------------------------------------|
 | GET    | `/`                   | —                                                                              | the app (index.html)                                                |
-| POST   | `/api/pdf-to-images`  | `file` (PDF), `dpi` (int, default 150), `output_format` (`png`/`jpg`/`webp`) | JSON: page thumbnails (base64) + a base64-encoded ZIP of all pages  |
+| POST   | `/api/pdf-to-images`  | `files` (1–10 PDFs), `dpi` (int, default 150), `output_format` (`png`/`jpg`/`webp`), `exclude_pages` (`fileIndex:page,...`) | JSON: page thumbnails (base64) + a base64-encoded ZIP of all pages (one folder per PDF when several are uploaded) |
 | POST   | `/api/images-to-pdf`  | `files` (one or more images, in desired page order)                          | `application/pdf` binary stream                                     |
 | POST   | `/api/pdf/combine`    | `files` (2-10 PDFs, in desired order), `output_filename`                    | `application/pdf` combined binary stream                            |
 | POST   | `/api/pdf/inspect`    | `files` (one or more PDFs), `thumb_dpi` (int, default 90)                    | JSON: page thumbnails per source file, for the page editor          |

@@ -693,18 +693,20 @@
 
   <!-- ============ PDF -> IMAGES ============ -->
   <section class="panel active" id="panel-p2i">
-    <div class="content-header"><h2>PDF → Images</h2><p class="content-desc">Render every page of a PDF as an image, then download individually or as a ZIP.</p></div>
+    <div class="content-header"><h2>PDF → Images</h2><p class="content-desc">Render every page of one or more PDFs as images, then download individually or as a ZIP.</p></div>
     <div class="frame" id="frame-p2i">
       <div class="sprockets left" id="sprL-p2i"></div>
       <div class="sprockets right" id="sprR-p2i"></div>
       <div class="scanline" id="scan-p2i"></div>
 
-      <div class="dropzone" id="drop-p2i" tabindex="0" role="button" aria-label="Choose a PDF file">
+      <div class="dropzone" id="drop-p2i" tabindex="0" role="button" aria-label="Choose one or more PDF files">
         <div class="glyph">⇊</div>
-        <div class="primary" id="drop-p2i-primary">Drop a PDF here, or click to choose one</div>
-        <div class="secondary">.PDF · UP TO 20MB · UP TO 400 PAGES</div>
-        <input type="file" id="file-p2i" accept="application/pdf,.pdf" />
+        <div class="primary" id="drop-p2i-primary">Drop PDFs here, or click to choose files</div>
+        <div class="secondary">.PDF · UP TO 10 FILES · 20MB EACH · UP TO 400 PAGES TOTAL</div>
+        <input type="file" id="file-p2i" accept="application/pdf,.pdf" multiple />
       </div>
+
+      <div class="filmstrip" id="p2i-list"></div>
 
       <div class="controls">
         <div class="field">
@@ -1409,22 +1411,59 @@
     const fmtSelect = document.getElementById('fmt-select');
     const btnZip = document.getElementById('btn-download-zip');
 
-    let currentFile = null;
+    const list = document.getElementById('p2i-list');
+
+    const MAX_FILES = 10;
+    let staged = [];
     let zipBase64 = null;
     let zipFilename = 'images.zip';
-    let excludedPages = new Set();
+    let excludedPages = new Set();   // "fileIndex:page" keys
 
-    function setFile(f){
-      if(!f) return;
-      if(!(f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'))){
+    function escapeHtml(str){
+      return String(str).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    function renderList(){
+      list.innerHTML = '';
+      staged.forEach((file, idx)=>{
+        const el = document.createElement('div');
+        el.className = 'film-item';
+        el.innerHTML = `
+          <div class="thumb-wrap"><div class="mono" style="color:var(--amber);font-size:24px;">PDF</div></div>
+          <div class="film-foot">
+            <span class="film-name" title="${escapeHtml(file.name)}">${idx+1}. ${escapeHtml(file.name)} · ${bytesToSize(file.size)}</span>
+            <div class="film-order">
+              <button data-idx="${idx}" class="remove" aria-label="Remove">x</button>
+            </div>
+          </div>
+        `;
+        list.appendChild(el);
+      });
+
+      const total = staged.reduce((sum, f)=> sum + f.size, 0);
+      primaryText.textContent = staged.length
+        ? staged.length + ' PDF' + (staged.length===1?'':'s') + ' selected — ' + bytesToSize(total)
+        : 'Drop PDFs here, or click to choose files';
+      btn.disabled = staged.length === 0;
+    }
+
+    function addFiles(fileList){
+      const all = Array.from(fileList || []);
+      if(all.length === 0) return;
+      const pdfs = all.filter(f=> f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
+      if(pdfs.length === 0){
         setStatus('That doesn\'t look like a PDF.', 'error');
         return;
       }
-      currentFile = f;
-      primaryText.textContent = f.name + ' — ' + bytesToSize(f.size);
-      btn.disabled = false;
-      setStatus('');
+      const before = staged.length;
+      staged = staged.concat(pdfs).slice(0, MAX_FILES);
+      const dropped = before + pdfs.length - staged.length;
+      renderList();
       resultsWrap.style.display = 'none';
+      zipBase64 = null;
+      if(dropped > 0) setStatus('Only ' + MAX_FILES + ' PDFs at a time — ' + dropped + ' skipped.', 'error');
+      else if(pdfs.length < all.length) setStatus('Skipped files that aren\'t PDFs.', 'error');
+      else setStatus('');
     }
 
     function setStatus(msg, kind){
@@ -1434,7 +1473,7 @@
 
     drop.addEventListener('click', ()=>fileInput.click());
     drop.addEventListener('keydown', e=>{ if(e.key==='Enter' || e.key===' '){ e.preventDefault(); fileInput.click(); }});
-    fileInput.addEventListener('change', e=> setFile(e.target.files[0]));
+    fileInput.addEventListener('change', e=>{ addFiles(e.target.files); fileInput.value = ''; });
 
     ['dragenter','dragover'].forEach(evt=>{
       drop.addEventListener(evt, e=>{ e.preventDefault(); drop.classList.add('drag'); });
@@ -1442,26 +1481,37 @@
     ['dragleave','drop'].forEach(evt=>{
       drop.addEventListener(evt, e=>{ e.preventDefault(); drop.classList.remove('drag'); });
     });
-    drop.addEventListener('drop', e=>{
-      const f = e.dataTransfer.files[0];
-      setFile(f);
+    drop.addEventListener('drop', e=> addFiles(e.dataTransfer.files));
+
+    list.addEventListener('click', e=>{
+      const b = e.target.closest('button');
+      if(!b) return;
+      staged.splice(parseInt(b.dataset.idx, 10), 1);
+      renderList();
+      resultsWrap.style.display = 'none';
+      zipBase64 = null;
+      setStatus('');
     });
 
+    function buildForm(){
+      const form = new FormData();
+      staged.forEach(f=> form.append('files', f));
+      form.append('dpi', dpiSelect.value);
+      form.append('output_format', fmtSelect.value);
+      return form;
+    }
+
     btn.addEventListener('click', async ()=>{
-      if(!currentFile) return;
+      if(staged.length === 0) return;
       excludedPages = new Set();
       btn.disabled = true;
       scan.classList.add('active');
-      setStatus('Scanning ' + currentFile.name + ' at ' + dpiSelect.value + ' DPI…');
+      const label = staged.length === 1 ? staged[0].name : staged.length + ' PDFs';
+      setStatus('Scanning ' + label + ' at ' + dpiSelect.value + ' DPI…');
       resultsWrap.style.display = 'none';
 
-      const form = new FormData();
-      form.append('file', currentFile);
-      form.append('dpi', dpiSelect.value);
-      form.append('output_format', fmtSelect.value);
-
       try{
-        const res = await fetch(API_BASE + '/api/pdf-to-images', { method:'POST', body: form });
+        const res = await fetch(API_BASE + '/api/pdf-to-images', { method:'POST', body: buildForm() });
         if(!res.ok){
           const err = await res.json().catch(()=>({detail:'Conversion failed.'}));
           throw new Error(err.detail || 'Conversion failed.');
@@ -1473,7 +1523,7 @@
         setStatus(err.message || 'Something went wrong.', 'error');
       }finally{
         scan.classList.remove('active');
-        btn.disabled = false;
+        btn.disabled = staged.length === 0;
       }
     });
 
@@ -1487,30 +1537,30 @@
       grid.innerHTML = '';
       zipBase64 = data.zip_base64;
       zipFilename = data.zip_filename;
-      meta.textContent = data.page_count + ' page' + (data.page_count===1?'':'s') + ' · ' + data.dpi + ' DPI · .' + data.format.toUpperCase();
+      const filesNote = data.file_count > 1 ? data.file_count + ' PDFs · ' : '';
+      meta.textContent = filesNote + data.page_count + ' page' + (data.page_count===1?'':'s') + ' · ' + data.dpi + ' DPI · .' + data.format.toUpperCase();
 
       data.pages.forEach(p=>{
-        const pageNum = parseInt((p.filename.match(/-page-(\d+)\./) || [])[1], 10);
+        const key = p.file_index + ':' + p.page_number;
         const card = document.createElement('div');
         card.className = 'print-card';
         card.innerHTML = `
           <div class="sprocket-strip"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
           <button type="button" class="remove-page" title="Remove this page">×</button>
-          <img src="${p.thumb_data_url}" alt="${p.filename}" loading="lazy" />
+          <img src="${p.thumb_data_url}" alt="${escapeHtml(p.filename)}" loading="lazy" />
           <div class="print-caption">
-            <span class="fname">${p.filename}</span>
+            <span class="fname">${escapeHtml(p.filename)}</span>
             <div class="meta">
               <span>${p.width}×${p.height} · ${bytesToSize(p.size_bytes)}</span>
             </div>
           </div>
         `;
         card.querySelector('.remove-page').addEventListener('click', ()=>{
-          if(!Number.isFinite(pageNum)) return;
-          if(excludedPages.has(pageNum)){
-            excludedPages.delete(pageNum);
+          if(excludedPages.has(key)){
+            excludedPages.delete(key);
             card.classList.remove('removed');
           } else {
-            excludedPages.add(pageNum);
+            excludedPages.add(key);
             card.classList.add('removed');
           }
           updateMetaCount();
@@ -1528,10 +1578,7 @@
         btnZip.disabled = true;
         setStatus('Rebuilding zip without removed pages…');
         try{
-          const form = new FormData();
-          form.append('file', currentFile);
-          form.append('dpi', dpiSelect.value);
-          form.append('output_format', fmtSelect.value);
+          const form = buildForm();
           form.append('exclude_pages', Array.from(excludedPages).join(','));
           const res = await fetch(API_BASE + '/api/pdf-to-images', { method:'POST', body: form });
           if(!res.ok){
