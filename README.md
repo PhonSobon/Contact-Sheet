@@ -30,6 +30,7 @@ Open **http://127.0.0.1:8000** — that's it. The page and the API are on the sa
 | POST   | `/api/pdf/combine`    | `files` (2-10 PDFs, in desired order), `output_filename`                    | `application/pdf` combined binary stream                            |
 | POST   | `/api/pdf/inspect`    | `files` (one or more PDFs), `thumb_dpi` (int, default 90)                    | JSON: page thumbnails per source file, for the page editor          |
 | POST   | `/api/pdf/build`      | `files`, `plan` (JSON page list), `compress`, `raster_dpi`, `raster_quality`, `output_filename` | `application/pdf` — drives merge, split/extract, delete, reorder, rotate, compress |
+| POST   | `/api/pdf/remove-pages` | `file` (PDF), `pages` (1-based pages/ranges to delete, e.g. `2, 5-7`)        | `application/pdf` — pages removed in place, original quality kept (no re-render/compression) |
 | POST   | `/api/image/compress` | `files` (one or more images), `quality`, `max_dimension`, `output_format`   | JSON: compressed results (base64) + a base64-encoded ZIP            |
 | POST   | `/api/pdf/crop-resize` | `file` (PDF), crop margins, `page_size`, optional custom dimensions         | `application/pdf` cropped/resized PDF                               |
 | GET    | `/api/health`         | —                                                                              | `{"status": "ok"}`                                                   |
@@ -60,6 +61,7 @@ Limits (adjust in `main.py` if needed): PDFs up to 40 MB / 60 pages total, image
 - **PDF → Images** — render every page at a chosen DPI/format, download individually or as a ZIP
 - **Images → PDF** — combine photos/screenshots into one PDF, reorder before converting
 - **Edit PDF** — drop one or more PDFs into an editable page grid: reorder, rotate, delete pages, drop in more PDFs to merge them, or keep only a subset to split/extract
+- **Remove Pages** — click pages (or type ranges like `2, 5-7`) to delete them; the rest of the document — images, fonts, links, bookmarks, forms — is kept byte-for-byte, no compression
 - **Compress** — shrink a PDF (lossless "optimize" or aggressive "rasterize") or a batch of images (quality + max-dimension), with before/after size shown
 - **Stamp** — add a diagonal watermark, header/footer text, and page numbers to a PDF, all in one pass
 - **Remove Background** — cut the subject out of a photo (transparent PNG), batches of up to 15 at a time

@@ -7,6 +7,8 @@ Endpoints:
   POST /api/pdf/inspect         -> multipart PDF(s) in, JSON page thumbnails out (for the page editor)
   POST /api/pdf/build           -> multipart PDF(s) + a page "plan" in, application/pdf out
                                     (drives merge, split/extract, delete pages, reorder, rotate, compress)
+  POST /api/pdf/remove-pages    -> multipart PDF + page list in, application/pdf out
+                                    (deletes pages in place, original quality kept)
   POST /api/pdf/stamp           -> multipart PDF in, application/pdf out
                                     (watermark, page numbers, header/footer text)
   POST /api/pdf/crop-resize     -> multipart PDF in, application/pdf out
@@ -563,6 +565,78 @@ async def pdf_build(
         "Content-Disposition": f'attachment; filename="{safe_name}"',
         "X-Output-Bytes": str(size),
         "Access-Control-Expose-Headers": "X-Output-Bytes",
+    }
+    return StreamingResponse(buf, media_type="application/pdf", headers=headers)
+
+
+def _parse_page_ranges(spec: str, page_count: int) -> set:
+    """Parses '1, 3, 5-7' (1-based, inclusive) into a set of 0-based page indexes."""
+    pages = set()
+    for token in (spec or "").replace(" ", "").split(","):
+        if not token:
+            continue
+        start, sep, end = token.partition("-")
+        try:
+            lo = int(start)
+            hi = int(end) if sep else lo
+        except ValueError:
+            raise HTTPException(400, f"'{token}' isn't a valid page or range.")
+        if lo > hi:
+            lo, hi = hi, lo
+        if lo < 1 or hi > page_count:
+            raise HTTPException(400, f"Page '{token}' is out of range — this PDF has {page_count} pages.")
+        pages.update(range(lo - 1, hi))
+    return pages
+
+
+@app.post("/api/pdf/remove-pages")
+async def pdf_remove_pages(
+    file: UploadFile = File(...),
+    pages: str = Form(...),  # 1-based pages/ranges to remove, e.g. "2, 5-7"
+):
+    """Delete pages from a PDF without touching anything else. Unlike
+    /api/pdf/build (which copies pages into a fresh document), this edits the
+    original document in place, so images, fonts, links, bookmarks, form
+    fields and metadata are kept exactly as they were — nothing is
+    re-rendered or re-compressed. garbage=1 only drops objects that belonged
+    solely to the removed pages."""
+    if not (file.content_type in ("application/pdf", "application/x-pdf") or (file.filename or "").lower().endswith(".pdf")):
+        raise HTTPException(400, "Please upload a PDF file.")
+
+    raw = await file.read()
+    if len(raw) > MAX_PDF_BYTES:
+        raise HTTPException(413, "PDF exceeds the 40 MB limit.")
+    try:
+        doc = fitz.open(stream=raw, filetype="pdf")
+    except Exception:
+        raise HTTPException(400, "Could not read this PDF — it may be corrupted or encrypted.")
+
+    try:
+        if doc.page_count == 0:
+            raise HTTPException(400, "This PDF has no pages.")
+
+        to_remove = _parse_page_ranges(pages, doc.page_count)
+        if not to_remove:
+            raise HTTPException(400, "Choose at least one page to remove.")
+        keep = [i for i in range(doc.page_count) if i not in to_remove]
+        if not keep:
+            raise HTTPException(400, "You can't remove every page — at least one must remain.")
+
+        doc.select(keep)
+        buf = io.BytesIO()
+        doc.save(buf, garbage=1)
+    finally:
+        doc.close()
+
+    buf.seek(0)
+    base_name = (file.filename or "document").rsplit(".", 1)[0]
+    out_name = f"{base_name}-pages-removed.pdf"
+    headers = {
+        "Content-Disposition": f'attachment; filename="{out_name}"',
+        "X-Output-Pages": str(len(keep)),
+        "X-Removed-Pages": str(len(to_remove)),
+        "X-Output-Bytes": str(len(buf.getvalue())),
+        "Access-Control-Expose-Headers": "X-Output-Pages, X-Removed-Pages, X-Output-Bytes",
     }
     return StreamingResponse(buf, media_type="application/pdf", headers=headers)
 

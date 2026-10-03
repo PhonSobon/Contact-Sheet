@@ -571,6 +571,18 @@
   .page-card .page-actions button:hover{color:var(--text);border-color:var(--text-muted);}
   .page-card .page-actions button.remove:hover{color:var(--danger);border-color:var(--danger);}
 
+  /* Remove Pages: click a card to mark it for removal */
+  .page-card.selectable{cursor:pointer;position:relative;transition:border-color .12s ease, opacity .12s ease;}
+  .page-card.selectable:hover{border-color:var(--text-muted);}
+  .page-card.marked{border-color:var(--danger);opacity:.45;}
+  .page-card.marked::after{
+    content:'✕';position:absolute;top:8px;right:8px;
+    width:24px;height:24px;border-radius:50%;
+    background:var(--danger);color:#fff;font-size:13px;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .page-card.marked .page-label{color:var(--danger);text-decoration:line-through;}
+
   /* ---------- stamp panel sections ---------- */
   .stamp-section{
     margin-top:22px;
@@ -673,6 +685,7 @@
       <button id="tab-i2p" role="tab" aria-selected="false"><span class="nav-icon"></span>Images → PDF</button>
       <button id="tab-combine" role="tab" aria-selected="false"><span class="nav-icon"></span>Combine PDF</button>
       <button id="tab-edit" role="tab" aria-selected="false"><span class="nav-icon"></span>Edit PDF</button>
+      <button id="tab-rmpages" role="tab" aria-selected="false"><span class="nav-icon"></span>Remove Pages</button>
       <button id="tab-compress" role="tab" aria-selected="false"><span class="nav-icon"></span>Compress</button>
       <button id="tab-stamp" role="tab" aria-selected="false"><span class="nav-icon"></span>Stamp</button>
       <button id="tab-crop" role="tab" aria-selected="false"><span class="nav-icon"></span>Crop / Resize</button>
@@ -891,6 +904,54 @@
           <div style="padding:36px 12px;text-align:center;">
             <div style="font-family:'Space Grotesk',sans-serif;font-size:15px;margin-bottom:14px;" id="edit-out-name">edited.pdf</div>
             <a class="mono" id="link-edit" href="#" download="edited.pdf" style="display:inline-block;padding:10px 18px;background:var(--amber);color:#14161b;border-radius:2px;text-decoration:none;font-size:12px;">↓ Download PDF</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ REMOVE PAGES ============ -->
+  <section class="panel" id="panel-rmpages">
+    <div class="content-header"><h2>Remove Pages</h2><p class="content-desc">Delete pages from a PDF. Everything else is kept exactly as it was — no re-rendering, no compression, same quality.</p></div>
+    <div class="frame" id="frame-rmpages">
+      <div class="sprockets left" id="sprL-rmpages"></div>
+      <div class="sprockets right" id="sprR-rmpages"></div>
+      <div class="scanline" id="scan-rmpages"></div>
+
+      <div class="dropzone" id="drop-rmpages" tabindex="0" role="button" aria-label="Choose a PDF">
+        <div class="glyph">⇊</div>
+        <div class="primary" id="drop-rmpages-primary">Drop a PDF here, or click to choose</div>
+        <div class="secondary">.PDF · ONE FILE · UP TO 40MB · UP TO 400 PAGES</div>
+        <input type="file" id="file-rmpages" accept="application/pdf,.pdf" />
+      </div>
+
+      <div class="hint" id="rmpages-hint" style="display:none;">Click a page to mark it for removal (click again to keep it), or type pages / ranges below.</div>
+      <div class="page-grid" id="rmpages-grid"></div>
+
+      <div class="controls" id="controls-rmpages" style="display:none;">
+        <div class="field">
+          <label for="rmpages-input">Pages to remove</label>
+          <input type="text" id="rmpages-input" class="mono" placeholder="e.g. 2, 5-7" />
+        </div>
+        <button class="ghost-btn" id="btn-rmpages-clear">Clear selection</button>
+        <div class="spacer"></div>
+        <button class="primary-btn" id="btn-rmpages" disabled>Remove Pages</button>
+      </div>
+
+      <div class="status-line" id="status-rmpages"></div>
+    </div>
+
+    <div class="results" id="results-rmpages" style="display:none;">
+      <div class="results-head">
+        <h2>Output</h2>
+        <div class="results-meta" id="meta-rmpages"></div>
+      </div>
+      <div class="grid" style="grid-template-columns:1fr;max-width:280px;">
+        <div class="print-card">
+          <div class="sprocket-strip"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+          <div style="padding:36px 12px;text-align:center;">
+            <div style="font-family:'Space Grotesk',sans-serif;font-size:15px;margin-bottom:14px;word-break:break-all;" id="rmpages-out-name">document.pdf</div>
+            <a class="mono" id="link-rmpages" href="#" download="document.pdf" style="display:inline-block;padding:10px 18px;background:var(--amber);color:#14161b;border-radius:2px;text-decoration:none;font-size:12px;">↓ Download PDF</a>
           </div>
         </div>
       </div>
@@ -1352,7 +1413,7 @@
       el.appendChild(s);
     }
   }
-  ['sprL-p2i','sprR-p2i','sprL-i2p','sprR-i2p','sprL-combine','sprR-combine','sprL-edit','sprR-edit','sprL-compress','sprR-compress','sprL-stamp','sprR-stamp','sprL-crop','sprR-crop','sprL-removebg','sprR-removebg'].forEach(id=>{
+  ['sprL-p2i','sprR-p2i','sprL-i2p','sprR-i2p','sprL-combine','sprR-combine','sprL-edit','sprR-edit','sprL-rmpages','sprR-rmpages','sprL-compress','sprR-compress','sprL-stamp','sprR-stamp','sprL-crop','sprR-crop','sprL-removebg','sprR-removebg'].forEach(id=>{
     paintSprockets(document.getElementById(id), 14);
   });
 
@@ -1362,6 +1423,7 @@
     'i2p': { btn: document.getElementById('tab-i2p'), panel: document.getElementById('panel-i2p') },
     'combine': { btn: document.getElementById('tab-combine'), panel: document.getElementById('panel-combine') },
     'edit': { btn: document.getElementById('tab-edit'), panel: document.getElementById('panel-edit') },
+    'rmpages': { btn: document.getElementById('tab-rmpages'), panel: document.getElementById('panel-rmpages') },
     'compress': { btn: document.getElementById('tab-compress'), panel: document.getElementById('panel-compress') },
     'stamp': { btn: document.getElementById('tab-stamp'), panel: document.getElementById('panel-stamp') },
     'crop': { btn: document.getElementById('tab-crop'), panel: document.getElementById('panel-crop') },
@@ -2015,6 +2077,191 @@
         meta.textContent = pageList.length + ' page' + (pageList.length===1?'':'s') + ' · ' + bytesToSize(blob.size);
         resultsWrap.style.display = 'block';
         setStatus('Done.', 'ok');
+      }catch(err){
+        setStatus(err.message || 'Something went wrong.', 'error');
+      }finally{
+        scan.classList.remove('active');
+        btn.disabled = false;
+      }
+    });
+  })();
+
+  // =========================================================
+  // PANEL: REMOVE PAGES (in-place delete, original quality kept)
+  // =========================================================
+  (function(){
+    const drop = document.getElementById('drop-rmpages');
+    const fileInput = document.getElementById('file-rmpages');
+    const primary = document.getElementById('drop-rmpages-primary');
+    const hint = document.getElementById('rmpages-hint');
+    const grid = document.getElementById('rmpages-grid');
+    const controls = document.getElementById('controls-rmpages');
+    const rangeInput = document.getElementById('rmpages-input');
+    const btnClear = document.getElementById('btn-rmpages-clear');
+    const btn = document.getElementById('btn-rmpages');
+    const status = document.getElementById('status-rmpages');
+    const scan = document.getElementById('scan-rmpages');
+    const resultsWrap = document.getElementById('results-rmpages');
+    const meta = document.getElementById('meta-rmpages');
+    const link = document.getElementById('link-rmpages');
+    const outNameLabel = document.getElementById('rmpages-out-name');
+
+    let sourceFile = null;
+    let pageCount = 0;
+    let marked = new Set();   // 1-based page numbers to remove
+    let lastUrl = null;
+
+    function setStatus(msg, kind){
+      status.textContent = msg || '';
+      status.className = 'status-line' + (kind ? ' ' + kind : '');
+    }
+
+    // Set of page numbers -> "2, 5-7"
+    function toRanges(set){
+      const nums = Array.from(set).sort((a,b)=>a-b);
+      const parts = [];
+      for(let i=0;i<nums.length;i++){
+        let j = i;
+        while(j+1 < nums.length && nums[j+1] === nums[j]+1) j++;
+        parts.push(i === j ? String(nums[i]) : nums[i] + '-' + nums[j]);
+        i = j;
+      }
+      return parts.join(', ');
+    }
+
+    // "2, 5-7" -> Set, or throws with a readable message
+    function fromRanges(text){
+      const out = new Set();
+      text.replace(/\s+/g, '').split(',').filter(Boolean).forEach(tok=>{
+        const m = tok.match(/^(\d+)(?:-(\d+))?$/);
+        if(!m) throw new Error('"' + tok + '" isn\'t a valid page or range.');
+        let lo = parseInt(m[1], 10), hi = m[2] ? parseInt(m[2], 10) : lo;
+        if(lo > hi) [lo, hi] = [hi, lo];
+        if(lo < 1 || hi > pageCount) throw new Error('Page "' + tok + '" is out of range — this PDF has ' + pageCount + ' pages.');
+        for(let n=lo;n<=hi;n++) out.add(n);
+      });
+      return out;
+    }
+
+    function refresh(){
+      grid.querySelectorAll('.page-card').forEach(card=>{
+        card.classList.toggle('marked', marked.has(Number(card.dataset.page)));
+      });
+      const keepCount = pageCount - marked.size;
+      btn.disabled = marked.size === 0 || keepCount < 1;
+      if(marked.size === 0) setStatus('');
+      else if(keepCount < 1) setStatus('You can\'t remove every page — at least one must remain.', 'error');
+      else setStatus(marked.size + ' page' + (marked.size===1?'':'s') + ' marked for removal · ' + keepCount + ' will remain.');
+    }
+
+    async function loadFile(f){
+      if(!f) return;
+      if(!(f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'))){
+        setStatus('That doesn\'t look like a PDF.', 'error');
+        return;
+      }
+      setStatus('Reading ' + f.name + '…');
+      resultsWrap.style.display = 'none';
+      const form = new FormData();
+      form.append('files', f);
+      form.append('thumb_dpi', '60');
+
+      try{
+        const res = await fetch(API_BASE + '/api/pdf/inspect', { method:'POST', body: form });
+        if(!res.ok){
+          const err = await res.json().catch(()=>({detail:'Could not read that PDF.'}));
+          throw new Error(err.detail || 'Could not read that PDF.');
+        }
+        const data = await res.json();
+        const src = data.sources[0];
+        sourceFile = f;
+        pageCount = src.page_count;
+        marked = new Set();
+        rangeInput.value = '';
+
+        grid.innerHTML = '';
+        src.pages.forEach(p=>{
+          const n = p.page_index + 1;
+          const card = document.createElement('div');
+          card.className = 'page-card selectable';
+          card.dataset.page = n;
+          card.title = 'Page ' + n + ' — click to remove / keep';
+          card.innerHTML = `
+            <div class="page-thumb-wrap"><img src="${p.data_url}" alt="page ${n}" /></div>
+            <div class="page-foot"><span class="page-label">Page ${n}</span></div>
+          `;
+          grid.appendChild(card);
+        });
+
+        primary.textContent = f.name + ' — ' + pageCount + ' page' + (pageCount===1?'':'s') + ' · ' + bytesToSize(f.size);
+        hint.style.display = 'block';
+        controls.style.display = 'flex';
+        refresh();
+      }catch(err){
+        setStatus(err.message || 'Something went wrong.', 'error');
+      }
+    }
+
+    drop.addEventListener('click', ()=>fileInput.click());
+    drop.addEventListener('keydown', e=>{ if(e.key==='Enter' || e.key===' '){ e.preventDefault(); fileInput.click(); }});
+    fileInput.addEventListener('change', e=>{ loadFile(e.target.files[0]); fileInput.value=''; });
+    ['dragenter','dragover'].forEach(evt=> drop.addEventListener(evt, e=>{ e.preventDefault(); drop.classList.add('drag'); }));
+    ['dragleave','drop'].forEach(evt=> drop.addEventListener(evt, e=>{ e.preventDefault(); drop.classList.remove('drag'); }));
+    drop.addEventListener('drop', e=> loadFile(e.dataTransfer.files[0]));
+
+    grid.addEventListener('click', e=>{
+      const card = e.target.closest('.page-card');
+      if(!card) return;
+      const n = Number(card.dataset.page);
+      if(marked.has(n)) marked.delete(n); else marked.add(n);
+      rangeInput.value = toRanges(marked);
+      refresh();
+    });
+
+    rangeInput.addEventListener('input', ()=>{
+      try{
+        marked = fromRanges(rangeInput.value);
+        refresh();
+      }catch(err){
+        btn.disabled = true;
+        setStatus(err.message, 'error');
+      }
+    });
+
+    btnClear.addEventListener('click', ()=>{
+      marked = new Set();
+      rangeInput.value = '';
+      refresh();
+    });
+
+    btn.addEventListener('click', async ()=>{
+      if(!sourceFile || marked.size === 0) return;
+      btn.disabled = true;
+      scan.classList.add('active');
+      setStatus('Removing ' + marked.size + ' page' + (marked.size===1?'':'s') + '…');
+      resultsWrap.style.display = 'none';
+
+      const form = new FormData();
+      form.append('file', sourceFile);
+      form.append('pages', toRanges(marked));
+
+      try{
+        const res = await fetch(API_BASE + '/api/pdf/remove-pages', { method:'POST', body: form });
+        if(!res.ok){
+          const err = await res.json().catch(()=>({detail:'Could not remove those pages.'}));
+          throw new Error(err.detail || 'Could not remove those pages.');
+        }
+        const blob = await res.blob();
+        if(lastUrl) URL.revokeObjectURL(lastUrl);
+        lastUrl = URL.createObjectURL(blob);
+        const outName = sourceFile.name.replace(/\.pdf$/i, '') + '-pages-removed.pdf';
+        link.href = lastUrl;
+        link.download = outName;
+        outNameLabel.textContent = outName;
+        const remaining = res.headers.get('X-Output-Pages') || (pageCount - marked.size);
+        meta.textContent = remaining + ' page' + (remaining==1?'':'s') + ' · ' + bytesToSize(sourceFile.size) + ' → ' + bytesToSize(blob.size) + ' · original quality';
+        resultsWrap.style.display = 'block';
+        setStatus('Done — removed pages ' + toRanges(marked) + '.', 'ok');
       }catch(err){
         setStatus(err.message || 'Something went wrong.', 'error');
       }finally{
