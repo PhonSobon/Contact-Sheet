@@ -60,6 +60,7 @@ Limits (adjust in `main.py` if needed): PDFs up to 40 MB / 60 pages total, image
 
 - **PDF → Images** — render every page at a chosen DPI/format, download individually or as a ZIP
 - **Images → PDF** — combine photos/screenshots into one PDF, reorder before converting
+- **Combine PDF** — drop up to 10 PDFs and see every page in the final order; drag pages (or use ← →) to move them anywhere, even between files, remove pages or whole files, then combine
 - **Edit PDF** — drop one or more PDFs into an editable page grid: reorder, rotate, delete pages, drop in more PDFs to merge them, or keep only a subset to split/extract
 - **Remove Pages** — click pages (or type ranges like `2, 5-7`) to delete them; the rest of the document — images, fonts, links, bookmarks, forms — is kept byte-for-byte, no compression
 - **Compress** — shrink a PDF (lossless "optimize" or aggressive "rasterize") or a batch of images (quality + max-dimension), with before/after size shown
