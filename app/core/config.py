@@ -6,6 +6,11 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 STATIC_DIR = PROJECT_ROOT / "static"
 
+# Public address of the site, e.g. "https://contactsheet.example.com", used for
+# the absolute URLs that link previews (Facebook, Telegram, X...) require.
+# Leave unset to derive it from each request's host.
+SITE_URL = os.getenv("SITE_URL", "").rstrip("/")
+
 MAX_PDF_BYTES = 40 * 1024 * 1024       # 40 MB
 MAX_IMAGE_BYTES = 20 * 1024 * 1024     # 20 MB per image
 MAX_PAGES = 400                         # safety cap for JSON+thumbnail payload

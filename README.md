@@ -14,18 +14,45 @@ contact-sheet/
 │   │   ├── pdf_utils.py         # open/validate uploaded PDFs, PDF responses, page ranges
 │   │   └── image_utils.py       # open/validate uploaded images
 │   ├── services/
-│   │   └── background_removal.py  # u2netp via onnxruntime
+│   │   ├── background_removal.py  # u2netp via onnxruntime
+│   │   ├── content_stream.py    # minimal PDF content-stream tokenizer
+│   │   ├── watermark.py         # PDF watermark detection + removal
+│   │   └── image_watermark.py   # image cleanup: inpainting, pale-watermark and colour removal (numpy only)
 │   └── routers/                 # one file per feature
 │       ├── health.py            # /api/health
 │       ├── convert.py           # /api/pdf-to-images, /api/images-to-pdf
 │       ├── pdf_merge.py         # /api/pdf/combine, /api/pdf/inspect, /api/pdf/build
 │       ├── pdf_pages.py         # /api/pdf/remove-pages
 │       ├── pdf_stamp.py         # /api/pdf/stamp
+│       ├── pdf_watermark.py     # /api/pdf/watermark/detect, /api/pdf/remove-watermark
+│       ├── image_watermark.py   # /api/image/remove-watermark
 │       ├── pdf_crop.py          # /api/pdf/crop-resize
 │       └── image.py             # /api/image/compress, /api/image/remove-bg
 ├── model/u2netp.onnx            # background-removal model
-└── static/
-    └── index.html               # the whole frontend (no build step, no framework)
+├── design/og-image.html         # source of static/og-image.png (link-preview image)
+└── static/                      # frontend — plain ES modules, no build step
+    ├── index.html               # markup only
+    ├── favicon.svg, og-image.png
+    ├── css/
+    │   ├── base.css             # design tokens (dark + light), element defaults
+    │   ├── layout.css           # sidebar + main column
+    │   ├── components.css       # frame, drop zone, fields, buttons, results
+    │   ├── tools.css            # tool-specific pieces (page grids, stamp, watermark)
+    │   ├── notify.css           # toast notifications
+    │   └── responsive.css       # small screens, reduced motion
+    └── js/
+        ├── main.js              # entry: theme, tabs, notifications, starts every tool
+        ├── core/
+        │   ├── api.js           # apiFetch(), readError(), health check
+        │   ├── files.js         # paste (Ctrl/⌘+V) + drop-anywhere for every tool
+        │   ├── download.js      # save blobs / base64 files
+        │   ├── notify.js        # toasts + showStatus() (every error shows a toast)
+        │   ├── theme.js, layout.js, format.js
+        └── tools/               # one module per tool, each exports init…()
+            ├── remove-watermark.js        # PDF mode + PDF/Image switch
+            ├── remove-watermark-image.js  # image mode
+            ├── mask-editor.js             # brush / box / eraser / colour-picker canvas
+            └── pdf-to-images.js, combine.js, …
 ```
 
 ## Run it
@@ -50,6 +77,9 @@ Open **http://127.0.0.1:8000** — that's it. The page and the API are on the sa
 | POST   | `/api/pdf/build`      | `files`, `plan` (JSON page list), `compress`, `raster_dpi`, `raster_quality`, `output_filename` | `application/pdf` — drives merge, split/extract, delete, reorder, rotate, compress |
 | POST   | `/api/pdf/remove-pages` | `file` (PDF), `pages` (1-based pages/ranges to delete, e.g. `2, 5-7`)        | `application/pdf` — pages removed in place, original quality kept (no re-render/compression) |
 | POST   | `/api/image/compress` | `files` (one or more images), `quality`, `max_dimension`, `output_format`   | JSON: compressed results (base64) + a base64-encoded ZIP            |
+| POST   | `/api/pdf/watermark/detect` | `file` (PDF)                                                     | JSON: watermark layers/annotations found + text that looks like a watermark |
+| POST   | `/api/pdf/remove-watermark` | `file` (PDF), `texts` (JSON list, e.g. `["CONFIDENTIAL"]`), `remove_stamps`, scanned pages: `images_light`, `images_light_strength`, `images_color`, `images_tolerance` | `application/pdf` with the watermark removed (422 if nothing removable was found) |
+| POST   | `/api/image/remove-watermark` | `files` (1–10 images), optional `masks` (`mask-<index>.png`, white = remove), `light`, `light_strength`, `color`, `tolerance`, `fill` (`auto`/`blend`/`paper`), `output_format` | JSON: cleaned images (base64) + ZIP |
 | POST   | `/api/pdf/crop-resize` | `file` (PDF), crop margins, `page_size`, optional custom dimensions         | `application/pdf` cropped/resized PDF                               |
 | GET    | `/api/health`         | —                                                                              | `{"status": "ok"}`                                                   |
 
@@ -82,6 +112,8 @@ Limits (adjust in `app/core/config.py` if needed): PDFs up to 40 MB / 400 pages 
 - **Edit PDF** — drop one or more PDFs into an editable page grid: reorder, rotate, delete pages, drop in more PDFs to merge them, or keep only a subset to split/extract
 - **Remove Pages** — click pages (or type ranges like `2, 5-7`) to delete them; the rest of the document — images, fonts, links, bookmarks, forms — is kept byte-for-byte, no compression
 - **Compress** — shrink a PDF (lossless "optimize" or aggressive "rasterize") or a batch of images (quality + max-dimension), with before/after size shown
+- **Remove Watermark** — finds watermark layers (Word/LibreOffice), Acrobat watermarks, watermark annotations and text watermarks, and removes the ones you pick; text is only removed when the whole text object is the watermark, so body text is kept. For scanned PDFs it can also clean the page images (pale or coloured watermarks). **Image mode**: paint or box over a watermark on photos/screenshots (filled in from the surroundings), or remove pale watermarks / a picked colour automatically, for up to 10 images at once, with press-and-hold before/after comparison
+- **Paste & drop anywhere** — every tool accepts files pasted with Ctrl/⌘+V (screenshots included) or dropped anywhere on the page
 - **Stamp** — add a diagonal watermark, header/footer text, and page numbers to a PDF, all in one pass
 - **Remove Background** — cut the subject out of a photo (transparent PNG), batches of up to 15 at a time
 

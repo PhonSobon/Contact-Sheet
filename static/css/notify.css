@@ -1,0 +1,77 @@
+/* Toast notifications (see js/core/notify.js). */
+
+.toast-region{
+  position:fixed;
+  right:20px;bottom:20px;
+  z-index:1000;
+  display:flex;flex-direction:column;gap:10px;
+  width:min(380px, calc(100vw - 32px));
+  pointer-events:none;
+}
+
+.toast{
+  --toast-color:var(--accent);
+  position:relative;
+  overflow:hidden;
+  display:flex;align-items:flex-start;gap:12px;
+  padding:13px 12px 14px 14px;
+  background:var(--surface);
+  color:var(--text);
+  border:1px solid var(--border);
+  border-left:3px solid var(--toast-color);
+  border-radius:10px;
+  box-shadow:var(--shadow);
+  font-size:13px;
+  line-height:1.45;
+  pointer-events:auto;
+  animation:toast-in .22s ease-out;
+}
+.toast-error{--toast-color:var(--danger);}
+.toast-success{--toast-color:var(--success);}
+.toast.leaving{animation:toast-out .2s ease-in forwards;}
+.toast.bump{animation:toast-bump .3s ease;}
+
+.toast-icon{
+  flex:0 0 28px;height:28px;
+  border-radius:8px;
+  display:flex;align-items:center;justify-content:center;
+  color:var(--toast-color);
+  background:color-mix(in srgb, var(--toast-color) 14%, transparent);
+}
+.toast-icon svg{width:16px;height:16px;display:block;}
+
+.toast-body{flex:1;min-width:0;padding-top:1px;}
+.toast-title{font-weight:600;font-size:13.5px;margin-bottom:2px;}
+.toast-msg{color:var(--text-muted);overflow-wrap:anywhere;}
+
+.toast-close{
+  appearance:none;border:none;background:none;
+  color:var(--text-faint);
+  width:26px;height:26px;flex:0 0 26px;
+  border-radius:6px;
+  cursor:pointer;font-size:12px;line-height:1;
+}
+.toast-close:hover{background:var(--surface-alt);color:var(--text);}
+.toast-close:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
+
+/* countdown bar along the bottom edge */
+.toast-timer{
+  position:absolute;left:0;right:0;bottom:0;height:2px;
+  background:var(--toast-color);opacity:.5;
+  transform-origin:left;
+  animation:toast-timer linear forwards;
+}
+.toast.paused .toast-timer{animation-play-state:paused;}
+
+@keyframes toast-in{from{opacity:0;transform:translateY(8px) scale(.98);}to{opacity:1;transform:none;}}
+@keyframes toast-out{to{opacity:0;transform:translateX(12px);}}
+@keyframes toast-bump{50%{transform:scale(1.02);}}
+@keyframes toast-timer{from{transform:scaleX(1);}to{transform:scaleX(0);}}
+
+@media (max-width:640px){
+  .toast-region{left:16px;right:16px;bottom:16px;width:auto;}
+}
+@media (prefers-reduced-motion: reduce){
+  .toast, .toast.leaving, .toast.bump{animation:none;}
+  .toast-timer{display:none;}
+}

@@ -1,0 +1,50 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:1200px;height:630px;overflow:hidden}
+  body{background:#f7f7f8;font-family:Inter,sans-serif;color:#17181c;position:relative}
+  .wrap{position:absolute;inset:0;display:flex;padding:72px 0 72px 80px}
+  .left{width:600px;display:flex;flex-direction:column}
+  .brand{display:flex;align-items:center;gap:16px}
+  .mark{width:64px;height:64px;border-radius:16px;background:#3d5afe;display:flex;align-items:center;justify-content:center}
+  .brand-name{font-family:'Space Grotesk';font-weight:700;font-size:30px;letter-spacing:-.01em}
+  h1{font-family:'Space Grotesk';font-weight:700;font-size:76px;line-height:1.02;letter-spacing:-.025em;margin-top:58px}
+  h1 span{color:#3d5afe}
+  p{font-size:25px;line-height:1.45;color:#686c74;margin-top:22px;max-width:520px}
+  .chips{display:flex;flex-wrap:wrap;gap:10px;margin-top:auto}
+  .chip{font-size:18px;font-weight:500;padding:9px 16px;border-radius:999px;background:#fff;border:1px solid #e5e6ea;color:#3a3d44}
+  /* contact-sheet page grid */
+  .sheet{position:absolute;right:-40px;top:70px;width:520px;height:560px;transform:rotate(-6deg);
+    background:#fff;border:1px solid #e5e6ea;border-radius:22px;box-shadow:0 24px 60px rgba(20,22,30,.12);
+    padding:28px;display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+  .pg{background:#f2f3f5;border-radius:8px;position:relative;overflow:hidden;border:1px solid #e5e6ea}
+  .pg::before{content:"";position:absolute;left:12%;right:12%;top:14%;height:8px;border-radius:4px;background:#d6d8dd;box-shadow:0 16px 0 #e5e6ea,0 32px 0 #e5e6ea}
+  .pg.img::after{content:"";position:absolute;left:12%;right:12%;bottom:12%;height:40%;border-radius:6px;background:linear-gradient(135deg,#c7d0ff,#3d5afe)}
+  .pg.sel{outline:3px solid #3d5afe;outline-offset:2px}
+  .num{position:absolute;top:6px;left:6px;width:22px;height:22px;border-radius:6px;background:#3d5afe;color:#fff;font:600 12px Inter;display:flex;align-items:center;justify-content:center;z-index:1}
+</style></head>
+<body>
+<div class="sheet">
+  <div class="pg img"></div><div class="pg"></div><div class="pg img sel"><span class="num">3</span></div>
+  <div class="pg"></div><div class="pg img"></div><div class="pg"></div>
+  <div class="pg img"></div><div class="pg"></div><div class="pg img"></div>
+</div>
+<div class="wrap">
+  <div class="left">
+    <div class="brand">
+      <div class="mark">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><circle cx="9.5" cy="12.5" r="1.3"/><path d="M19 18l-4-4-7 7"/></svg>
+      </div>
+      <div class="brand-name">Contact Sheet</div>
+    </div>
+    <h1>Free <span>PDF &amp;<br>image</span> tools</h1>
+    <p>Convert, combine, edit, compress and stamp PDFs. Remove image backgrounds.</p>
+    <div class="chips">
+      <span class="chip">PDF → Images</span><span class="chip">Combine PDF</span><span class="chip">Remove Pages</span>
+      <span class="chip">Compress</span><span class="chip">Remove BG</span>
+    </div>
+  </div>
+</div>
+</body></html>

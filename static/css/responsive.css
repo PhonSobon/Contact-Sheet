@@ -1,0 +1,35 @@
+/* Reduced motion and small-screen layout. Loaded last so it can override. */
+
+@media (prefers-reduced-motion: reduce){
+  .scanline.active{animation:none;opacity:1;}
+  section.panel.active{animation:none;}
+}
+
+@media (max-width:860px){
+  .app-shell{flex-direction:column;}
+  .sidebar{
+    width:100%;flex:none;height:auto;position:relative;
+    flex-direction:row;flex-wrap:wrap;align-items:center;
+    padding:14px 16px;gap:0;
+  }
+  .sidebar-brand{padding:0;margin-right:auto;}
+  .sidebar-nav{
+    order:3;width:100%;margin-top:14px;
+    flex-direction:row;flex-wrap:nowrap;overflow-x:auto;
+    -webkit-overflow-scrolling:touch;
+    padding-bottom:2px;
+  }
+  .sidebar-nav button{white-space:nowrap;flex:0 0 auto;}
+  .sidebar-foot{
+    order:2;margin-top:0;border-top:none;padding-top:0;
+    flex-direction:row;width:auto;
+  }
+  .theme-toggle{width:auto;padding:8px 12px;}
+    .main-inner{padding:28px 18px 60px;}
+  .frame{padding:22px 18px;}
+}
+
+@media (max-width:640px){
+  .controls{gap:16px;}
+  .field select{min-width:100px;}
+}

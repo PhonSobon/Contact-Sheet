@@ -1,0 +1,61 @@
+/* Design tokens (dark default + light mode) and element defaults. */
+
+:root{
+  --bg:#111214;
+  --sidebar-bg:#17181b;
+  --surface:#1b1c1f;
+  --surface-alt:#232427;
+  --border:#2a2b2f;
+  --border-strong:#37383e;
+  --text:#f1f1f3;
+  --text-muted:#9a9ba1;
+  --text-faint:#6c6d73;
+  --accent:#7c93ff;
+  --accent-hover:#93a6ff;
+  --accent-soft:rgba(124,147,255,.14);
+  --accent-ink:#0f1220;
+  --danger:#ff7a72;
+  --success:#3ecf8e;
+  --radius-sm:6px;
+  --radius:10px;
+  --radius-lg:14px;
+  --shadow-sm:0 1px 2px rgba(0,0,0,.2);
+  --shadow:0 4px 16px rgba(0,0,0,.28);
+  --font:'Inter',sans-serif;
+  --display:'Space Grotesk',sans-serif;
+  --mono:'IBM Plex Mono',monospace;
+}
+
+html.light-mode{
+  --bg:#f7f7f8;
+  --sidebar-bg:#ffffff;
+  --surface:#ffffff;
+  --surface-alt:#f2f3f5;
+  --border:#e5e6ea;
+  --border-strong:#d6d8dd;
+  --text:#17181c;
+  --text-muted:#686c74;
+  --text-faint:#9a9ea6;
+  --accent:#3d5afe;
+  --accent-hover:#2f46e0;
+  --accent-soft:#edf0ff;
+  --accent-ink:#ffffff;
+  --danger:#d9463c;
+  --success:#1f9d63;
+  --shadow-sm:0 1px 2px rgba(20,22,30,.05);
+  --shadow:0 8px 24px rgba(20,22,30,.08);
+}
+
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:var(--font);
+  -webkit-font-smoothing:antialiased;
+  min-height:100vh;
+}
+::selection{background:var(--accent-soft);color:var(--text);}
+a{color:var(--accent);}
+.mono{font-family:var(--mono);}
+input[type=file]{display:none;}
