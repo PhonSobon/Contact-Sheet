@@ -4,10 +4,28 @@ One app, one command. FastAPI serves both the API and the page itself.
 
 ```
 contact-sheet/
-├── main.py            # FastAPI app: API routes + serves static/index.html
+├── main.py                      # entry point (`uvicorn main:app`) — re-exports app.main:app
 ├── requirements.txt
+├── app/
+│   ├── main.py                  # create_app(): routers, error handlers, serves static/
+│   ├── core/
+│   │   ├── config.py            # limits (file size, page count) and paths
+│   │   ├── errors.py            # unexpected errors -> JSON {"detail": ...}
+│   │   ├── pdf_utils.py         # open/validate uploaded PDFs, PDF responses, page ranges
+│   │   └── image_utils.py       # open/validate uploaded images
+│   ├── services/
+│   │   └── background_removal.py  # u2netp via onnxruntime
+│   └── routers/                 # one file per feature
+│       ├── health.py            # /api/health
+│       ├── convert.py           # /api/pdf-to-images, /api/images-to-pdf
+│       ├── pdf_merge.py         # /api/pdf/combine, /api/pdf/inspect, /api/pdf/build
+│       ├── pdf_pages.py         # /api/pdf/remove-pages
+│       ├── pdf_stamp.py         # /api/pdf/stamp
+│       ├── pdf_crop.py          # /api/pdf/crop-resize
+│       └── image.py             # /api/image/compress, /api/image/remove-bg
+├── model/u2netp.onnx            # background-removal model
 └── static/
-    └── index.html      # the whole frontend (no build step, no framework)
+    └── index.html               # the whole frontend (no build step, no framework)
 ```
 
 ## Run it
@@ -54,7 +72,7 @@ Interactive API docs at `/docs`.
 
 `compress` is `"none"`, `"optimize"` (lossless, safe for any PDF), or `"rasterize"` (biggest size reduction — flattens every page to a JPEG, so text is no longer selectable; best for scanned documents).
 
-Limits (adjust in `main.py` if needed): PDFs up to 40 MB / 60 pages total, images up to 20 MB each / 60 files per PDF, up to 10 PDFs at once in the editor.
+Limits (adjust in `app/core/config.py` if needed): PDFs up to 40 MB / 400 pages total, images up to 20 MB each / 400 files per PDF, up to 10 PDFs at once in the editor.
 
 ## Features
 

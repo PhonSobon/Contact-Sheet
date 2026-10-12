@@ -1485,6 +1485,21 @@
     apiIndicator.style.color = 'var(--danger)';
   });
 
+  // Turns a failed response into a readable message. The API always sends
+  // JSON {detail}, but a hosting proxy (upload too large, timeout) may answer
+  // with plain text/HTML, so fall back to the HTTP status in that case.
+  async function readError(res, fallback){
+    try{
+      const body = await res.clone().json();
+      const detail = body && body.detail;
+      if(typeof detail === 'string' && detail) return detail;
+      if(Array.isArray(detail) && detail.length) return detail.map(d=> d.msg || String(d)).join('; ');
+    }catch(_){}
+    if(res.status === 413) return fallback + ' The upload is too large for the server (HTTP 413) — try fewer or smaller files.';
+    if(res.status === 504 || res.status === 408) return fallback + ' The server took too long (HTTP ' + res.status + ') — try fewer pages at once.';
+    return fallback + ' (HTTP ' + res.status + ')';
+  }
+
   function bytesToSize(bytes){
     if(bytes < 1024) return bytes + ' B';
     if(bytes < 1024*1024) return (bytes/1024).toFixed(1) + ' KB';
@@ -1610,8 +1625,7 @@
       try{
         const res = await fetch(API_BASE + '/api/pdf-to-images', { method:'POST', body: buildForm() });
         if(!res.ok){
-          const err = await res.json().catch(()=>({detail:'Conversion failed.'}));
-          throw new Error(err.detail || 'Conversion failed.');
+          throw new Error(await readError(res, 'Conversion failed.'));
         }
         const data = await res.json();
         renderResults(data);
@@ -1679,8 +1693,7 @@
           form.append('exclude_pages', Array.from(excludedPages).join(','));
           const res = await fetch(API_BASE + '/api/pdf-to-images', { method:'POST', body: form });
           if(!res.ok){
-            const err = await res.json().catch(()=>({detail:'Conversion failed.'}));
-            throw new Error(err.detail || 'Conversion failed.');
+            throw new Error(await readError(res, 'Conversion failed.'));
           }
           const data = await res.json();
           zipBase64 = data.zip_base64;
@@ -1807,8 +1820,7 @@
       try{
         const res = await fetch(API_BASE + '/api/images-to-pdf', { method:'POST', body: form });
         if(!res.ok){
-          const err = await res.json().catch(()=>({detail:'Conversion failed.'}));
-          throw new Error(err.detail || 'Conversion failed.');
+          throw new Error(await readError(res, 'Conversion failed.'));
         }
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
@@ -1954,8 +1966,7 @@
       try{
         const res = await fetch(API_BASE + '/api/pdf/inspect', { method:'POST', body: form });
         if(!res.ok){
-          const err = await res.json().catch(()=>({detail:'Could not read those PDFs.'}));
-          throw new Error(err.detail || 'Could not read those PDFs.');
+          throw new Error(await readError(res, 'Could not read those PDFs.'));
         }
         const data = await res.json();
         const incoming = data.sources.reduce((sum, src)=> sum + src.page_count, 0);
@@ -2110,8 +2121,7 @@
       try{
         const res = await fetch(API_BASE + '/api/pdf/build', { method:'POST', body: form });
         if(!res.ok){
-          const err = await res.json().catch(()=>({detail:'Could not combine those PDFs.'}));
-          throw new Error(err.detail || 'Could not combine those PDFs.');
+          throw new Error(await readError(res, 'Could not combine those PDFs.'));
         }
         const blob = await res.blob();
         if(lastUrl) URL.revokeObjectURL(lastUrl);
@@ -2205,8 +2215,7 @@
       try{
         const res = await fetch(API_BASE + '/api/pdf/inspect', { method:'POST', body: form });
         if(!res.ok){
-          const err = await res.json().catch(()=>({detail:'Could not read those PDFs.'}));
-          throw new Error(err.detail || 'Could not read those PDFs.');
+          throw new Error(await readError(res, 'Could not read those PDFs.'));
         }
         const data = await res.json();
         const baseIndex = sourceFiles.length;
@@ -2279,8 +2288,7 @@
       try{
         const res = await fetch(API_BASE + '/api/pdf/build', { method:'POST', body: form });
         if(!res.ok){
-          const err = await res.json().catch(()=>({detail:'Could not build the PDF.'}));
-          throw new Error(err.detail || 'Could not build the PDF.');
+          throw new Error(await readError(res, 'Could not build the PDF.'));
         }
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
@@ -2383,8 +2391,7 @@
       try{
         const res = await fetch(API_BASE + '/api/pdf/inspect', { method:'POST', body: form });
         if(!res.ok){
-          const err = await res.json().catch(()=>({detail:'Could not read that PDF.'}));
-          throw new Error(err.detail || 'Could not read that PDF.');
+          throw new Error(await readError(res, 'Could not read that PDF.'));
         }
         const data = await res.json();
         const src = data.sources[0];
@@ -2462,8 +2469,7 @@
       try{
         const res = await fetch(API_BASE + '/api/pdf/remove-pages', { method:'POST', body: form });
         if(!res.ok){
-          const err = await res.json().catch(()=>({detail:'Could not remove those pages.'}));
-          throw new Error(err.detail || 'Could not remove those pages.');
+          throw new Error(await readError(res, 'Could not remove those pages.'));
         }
         const blob = await res.blob();
         if(lastUrl) URL.revokeObjectURL(lastUrl);
@@ -2590,8 +2596,7 @@
 
           const res = await fetch(API_BASE + '/api/pdf/build', { method:'POST', body: form });
           if(!res.ok){
-            const err = await res.json().catch(()=>({detail:'Compression failed.'}));
-            throw new Error(err.detail || 'Compression failed.');
+            throw new Error(await readError(res, 'Compression failed.'));
           }
           const blob = await res.blob();
           const url = URL.createObjectURL(blob);
@@ -2668,8 +2673,7 @@
         try{
           const res = await fetch(API_BASE + '/api/image/compress', { method:'POST', body: form });
           if(!res.ok){
-            const err = await res.json().catch(()=>({detail:'Compression failed.'}));
-            throw new Error(err.detail || 'Compression failed.');
+            throw new Error(await readError(res, 'Compression failed.'));
           }
           const data = await res.json();
           zipBase64 = data.zip_base64;
@@ -2806,8 +2810,7 @@
       try{
         const res = await fetch(API_BASE + '/api/pdf/stamp', { method:'POST', body: form });
         if(!res.ok){
-          const err = await res.json().catch(()=>({detail:'Stamping failed.'}));
-          throw new Error(err.detail || 'Stamping failed.');
+          throw new Error(await readError(res, 'Stamping failed.'));
         }
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
@@ -2917,8 +2920,7 @@
       try{
         const res = await fetch(API_BASE + '/api/pdf/crop-resize', { method:'POST', body: form });
         if(!res.ok){
-          const err = await res.json().catch(()=>({detail:'Crop / resize failed.'}));
-          throw new Error(err.detail || 'Crop / resize failed.');
+          throw new Error(await readError(res, 'Crop / resize failed.'));
         }
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
@@ -2996,8 +2998,7 @@
       try{
         const res = await fetch(API_BASE + '/api/image/remove-bg', { method:'POST', body: form });
         if(!res.ok){
-          const err = await res.json().catch(()=>({detail:'Background removal failed.'}));
-          throw new Error(err.detail || 'Background removal failed.');
+          throw new Error(await readError(res, 'Background removal failed.'));
         }
         const data = await res.json();
         zipBase64 = data.zip_base64;
