@@ -3,6 +3,66 @@ import { apiFetch, readError } from '../core/api.js';
 import { bytesToSize } from '../core/format.js';
 import { showStatus } from '../core/notify.js';
 
+const PDF_LIB_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js';
+let pdfLibPromise = null;
+
+// pdf-lib is only needed when combining, so load it on first use.
+function loadPdfLib(){
+  if(window.PDFLib) return Promise.resolve(window.PDFLib);
+  if(!pdfLibPromise){
+    pdfLibPromise = new Promise((resolve, reject)=>{
+      const s = document.createElement('script');
+      s.src = PDF_LIB_URL;
+      s.onload = ()=> window.PDFLib ? resolve(window.PDFLib) : reject(new Error('pdf-lib did not load'));
+      s.onerror = ()=>{ pdfLibPromise = null; s.remove(); reject(new Error('pdf-lib did not load')); };
+      document.head.appendChild(s);
+    });
+  }
+  return pdfLibPromise;
+}
+
+/**
+ * Builds the combined PDF in the browser. Nothing is uploaded, so hosting
+ * limits on request/response size (Vercel: 4.5 MB) don't apply — the merged
+ * file is often bigger than that.
+ */
+async function combineInBrowser(files, plan){
+  const { PDFDocument } = await loadPdfLib();
+  const srcDocs = await Promise.all(files.map(async f=>
+    PDFDocument.load(await f.arrayBuffer(), { ignoreEncryption: true })
+  ));
+  const out = await PDFDocument.create();
+  // Copy each file's pages in one call so shared fonts/images are copied once.
+  const copied = [];
+  for(const [i, doc] of srcDocs.entries()){
+    const indices = [...new Set(plan.filter(p=> p.source_index === i).map(p=> p.page_index))];
+    const pages = await out.copyPages(doc, indices);
+    copied.push(new Map(indices.map((pageIdx, j)=> [pageIdx, pages[j]])));
+  }
+  const added = new Set();
+  for(const item of plan){
+    let page = copied[item.source_index].get(item.page_index);
+    // The same page listed twice needs its own copy.
+    if(added.has(page)) [page] = await out.copyPages(srcDocs[item.source_index], [item.page_index]);
+    added.add(page);
+    out.addPage(page);
+  }
+  return new Blob([await out.save()], { type: 'application/pdf' });
+}
+
+async function combineOnServer(files, plan, finalName){
+  const form = new FormData();
+  files.forEach(f=> form.append('files', f));
+  form.append('plan', JSON.stringify(plan));
+  form.append('compress', 'none');
+  form.append('output_filename', finalName);
+  const res = await apiFetch('/api/pdf/build', { method:'POST', body: form });
+  if(!res.ok){
+    throw new Error(await readError(res, 'Could not combine those PDFs.'));
+  }
+  return res.blob();
+}
+
 export function initCombine(){
   const drop = document.getElementById('drop-combine');
   const fileInput = document.getElementById('file-combine');
@@ -119,24 +179,31 @@ export function initCombine(){
 
     setStatus('Reading ' + pdfs.length + ' file' + (pdfs.length===1?'':'s') + '…');
     scan.classList.add('active');
-    const form = new FormData();
-    pdfs.forEach(f=> form.append('files', f));
-    form.append('thumb_dpi', '60');
 
     try{
-      const res = await apiFetch('/api/pdf/inspect', { method:'POST', body: form });
-      if(!res.ok){
-        throw new Error(await readError(res, 'Could not read those PDFs.'));
-      }
-      const data = await res.json();
-      const incoming = data.sources.reduce((sum, src)=> sum + src.page_count, 0);
-      if(pageList.length + incoming > MAX_TOTAL_PAGES){
-        throw new Error('That would be ' + (pageList.length + incoming) + ' pages — the limit is ' + MAX_TOTAL_PAGES + '.');
+      // One request per file: hosted servers (e.g. Vercel, 4.5 MB) cap the
+      // request/response size, and several PDFs in one upload easily pass it.
+      const incomingSources = [];
+      let incoming = 0;
+      for(const f of pdfs){
+        const form = new FormData();
+        form.append('files', f);
+        form.append('thumb_dpi', '60');
+        const res = await apiFetch('/api/pdf/inspect', { method:'POST', body: form });
+        if(!res.ok){
+          throw new Error(await readError(res, 'Could not read ' + f.name + '.'));
+        }
+        const src = (await res.json()).sources[0];
+        incoming += src.page_count;
+        if(pageList.length + incoming > MAX_TOTAL_PAGES){
+          throw new Error('That would be ' + (pageList.length + incoming) + ' pages — the limit is ' + MAX_TOTAL_PAGES + '.');
+        }
+        incomingSources.push({ file: f, src });
       }
 
-      data.sources.forEach(src=>{
+      incomingSources.forEach(({ file, src })=>{
         const id = sources.length;
-        sources.push({ file: pdfs[src.source_index], color: COLORS[colorCounter++ % COLORS.length], page_count: src.page_count, removed: false });
+        sources.push({ file, color: COLORS[colorCounter++ % COLORS.length], page_count: src.page_count, removed: false });
         src.pages.forEach(p=>{
           pageList.push({ key: 'c' + (keyCounter++), source: id, page_index: p.page_index, data_url: p.data_url });
         });
@@ -272,18 +339,15 @@ export function initCombine(){
 
     const outName = (nameInput.value || 'combined.pdf').trim() || 'combined.pdf';
     const finalName = outName.toLowerCase().endsWith('.pdf') ? outName : outName + '.pdf';
-    const form = new FormData();
-    used.forEach(id=> form.append('files', sources[id].file));
-    form.append('plan', JSON.stringify(plan));
-    form.append('compress', 'none');
-    form.append('output_filename', finalName);
 
     try{
-      const res = await apiFetch('/api/pdf/build', { method:'POST', body: form });
-      if(!res.ok){
-        throw new Error(await readError(res, 'Could not combine those PDFs.'));
+      let blob;
+      try{
+        blob = await combineInBrowser(used.map(id=> sources[id].file), plan);
+      }catch(err){
+        console.warn('In-browser combine failed, using the server instead.', err);
+        blob = await combineOnServer(used.map(id=> sources[id].file), plan, finalName);
       }
-      const blob = await res.blob();
       if(lastUrl) URL.revokeObjectURL(lastUrl);
       lastUrl = URL.createObjectURL(blob);
       link.href = lastUrl;
