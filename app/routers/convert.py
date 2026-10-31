@@ -24,6 +24,7 @@ from app.core.pdf_utils import base_name, read_pdf_upload
 router = APIRouter(prefix="/api", tags=["convert"])
 
 MAX_ESTIMATED_OUTPUT_BYTES = 200 * 1024 * 1024
+ESTIMATE_SAMPLE_PAGES = 3
 
 # Full-resolution pages only go into the zip. The JSON response also
 # carries a small on-screen preview per page (capped width, JPEG) instead
@@ -80,23 +81,59 @@ async def pdf_to_images(
             d.close()
 
 
+def _encode_page(page, matrix, ext, pil_format):
+    pix = page.get_pixmap(matrix=matrix, alpha=(ext == "png"))
+    if ext == "png":
+        return pix, pix.tobytes("png")
+    # Convert via Pillow for JPEG/WEBP (pixmap has no alpha in that path)
+    img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+    img_bytes_io = io.BytesIO()
+    save_kwargs = {"quality": 92} if pil_format == "JPEG" else {}
+    img.save(img_bytes_io, format=pil_format, **save_kwargs)
+    return pix, img_bytes_io.getvalue()
+
+
+def _estimate_output_bytes(included, zoom, matrix, ext, pil_format):
+    """Estimate total encoded size by actually encoding a few sample pages.
+
+    Compressed size per pixel varies hugely with content: a text page as PNG
+    is ~0.05-0.2 bytes/px, a scanned photo page can be ~3. A fixed guess
+    either blocks normal documents or lets huge scans through, so measure
+    up to ESTIMATE_SAMPLE_PAGES pages spread across the selection and
+    extrapolate by pixel count.
+    """
+    total_pixels = sum((p.rect.width * zoom) * (p.rect.height * zoom) for p in included)
+    if not included:
+        return 0
+    n = min(ESTIMATE_SAMPLE_PAGES, len(included))
+    step = len(included) / n
+    samples = [included[int(k * step)] for k in range(n)]
+    sample_bytes = 0
+    sample_pixels = 0
+    for page in samples:
+        pix, data = _encode_page(page, matrix, ext, pil_format)
+        sample_bytes += len(data)
+        sample_pixels += pix.width * pix.height
+    return total_pixels * (sample_bytes / max(sample_pixels, 1))
+
+
 def _render_pdfs_to_images(files, docs, dpi, output_format, excluded):
     zoom = dpi / 72.0
+    matrix = fitz.Matrix(zoom, zoom)
+    pil_format = "JPEG" if output_format in ("jpg", "jpeg") else output_format.upper()
+    ext = "jpg" if output_format in ("jpg", "jpeg") else output_format
 
-    # Rough output-size estimate before doing any rendering, so an oversized
-    # request (many pages x high DPI, especially PNG) fails fast with a
-    # useful message instead of spending a minute rendering/encoding and
-    # then timing out or blowing past a proxy's response-size limit. PNG
-    # stores raw-ish pixels (~3 bytes/px before deflate, deflate barely
-    # helps on photo/scan content); JPEG/WEBP land far smaller per pixel.
-    total_pixels = sum(
-        (p.rect.width * zoom) * (p.rect.height * zoom)
+    # Output-size estimate before rendering everything, so an oversized
+    # request (many pages x high DPI of photo/scan content) fails fast with
+    # a useful message instead of spending a minute rendering/encoding and
+    # then timing out or blowing past a proxy's response-size limit.
+    included = [
+        p
         for f_idx, doc in enumerate(docs)
         for i, p in enumerate(doc, start=1)
         if (f_idx, i) not in excluded
-    )
-    bytes_per_pixel = 3.0 if output_format == "png" else 0.5
-    estimated_bytes = total_pixels * bytes_per_pixel
+    ]
+    estimated_bytes = _estimate_output_bytes(included, zoom, matrix, ext, pil_format)
     if estimated_bytes > MAX_ESTIMATED_OUTPUT_BYTES:
         raise HTTPException(
             400,
@@ -104,10 +141,6 @@ def _render_pdfs_to_images(files, docs, dpi, output_format, excluded):
             f"at {dpi} DPI ({output_format.upper()}), which is too large to process here. "
             "Try a lower DPI, JPG/WEBP output, or fewer pages.",
         )
-
-    matrix = fitz.Matrix(zoom, zoom)
-    pil_format = "JPEG" if output_format in ("jpg", "jpeg") else output_format.upper()
-    ext = "jpg" if output_format in ("jpg", "jpeg") else output_format
 
     # One PDF keeps the flat zip layout; several PDFs each get their own
     # folder so identically-named pages from different files can't collide.
@@ -131,17 +164,7 @@ def _render_pdfs_to_images(files, docs, dpi, output_format, excluded):
             for i, page in enumerate(doc, start=1):
                 if (f_idx, i) in excluded:
                     continue
-                pix = page.get_pixmap(matrix=matrix, alpha=(ext == "png"))
-
-                if ext == "png":
-                    img_bytes = pix.tobytes("png")
-                else:
-                    # Convert via Pillow for JPEG/WEBP (pixmap has no alpha in that path)
-                    img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
-                    img_bytes_io = io.BytesIO()
-                    save_kwargs = {"quality": 92} if pil_format == "JPEG" else {}
-                    img.save(img_bytes_io, format=pil_format, **save_kwargs)
-                    img_bytes = img_bytes_io.getvalue()
+                pix, img_bytes = _encode_page(page, matrix, ext, pil_format)
                 filename = f"{name}-page-{i:02d}.{ext}"
                 zf.writestr(f"{name}/{filename}" if multi else filename, img_bytes)
 

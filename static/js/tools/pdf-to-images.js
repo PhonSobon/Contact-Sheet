@@ -24,20 +24,46 @@ export function initPdfToImages(){
   let zipBase64 = null;
   let zipFilename = 'images.zip';
   let excludedPages = new Set();   // "fileIndex:page" keys
+  const covers = new WeakMap();    // File -> { dataUrl, pageCount } once its first page is rendered
 
   function escapeHtml(str){
     return String(str).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
 
+  // First-page preview per staged PDF. One request per file: hosted servers
+  // cap request size, and only page 1 is rendered so it stays small.
+  async function loadCover(file){
+    if(covers.has(file)) return;
+    covers.set(file, null);
+    try{
+      const form = new FormData();
+      form.append('files', file);
+      form.append('thumb_dpi', '60');
+      form.append('max_pages', '1');
+      const res = await apiFetch('/api/pdf/inspect', { method:'POST', body: form });
+      if(!res.ok) return;
+      const src = (await res.json()).sources[0];
+      covers.set(file, { dataUrl: src.pages[0] && src.pages[0].data_url, pageCount: src.page_count });
+      if(staged.includes(file)) renderList();
+    }catch(_){
+      // keep the text placeholder
+    }
+  }
+
   function renderList(){
     list.innerHTML = '';
     staged.forEach((file, idx)=>{
+      const cover = covers.get(file);
+      const thumb = cover && cover.dataUrl
+        ? `<img src="${cover.dataUrl}" alt="${escapeHtml(file.name)}" style="max-width:100%;max-height:100%;" />`
+        : `<div class="mono" style="color:var(--amber);font-size:24px;">PDF</div>`;
+      const pagesNote = cover ? ' · ' + cover.pageCount + ' page' + (cover.pageCount===1?'':'s') : '';
       const el = document.createElement('div');
       el.className = 'film-item';
       el.innerHTML = `
-        <div class="thumb-wrap"><div class="mono" style="color:var(--amber);font-size:24px;">PDF</div></div>
+        <div class="thumb-wrap">${thumb}</div>
         <div class="film-foot">
-          <span class="film-name" title="${escapeHtml(file.name)}">${idx+1}. ${escapeHtml(file.name)} · ${bytesToSize(file.size)}</span>
+          <span class="film-name" title="${escapeHtml(file.name)}">${idx+1}. ${escapeHtml(file.name)} · ${bytesToSize(file.size)}${pagesNote}</span>
           <div class="film-order">
             <button data-idx="${idx}" class="remove" aria-label="Remove">x</button>
           </div>
@@ -65,6 +91,7 @@ export function initPdfToImages(){
     staged = staged.concat(pdfs).slice(0, MAX_FILES);
     const dropped = before + pdfs.length - staged.length;
     renderList();
+    staged.forEach(loadCover);
     resultsWrap.style.display = 'none';
     zipBase64 = null;
     if(dropped > 0) setStatus('Only ' + MAX_FILES + ' PDFs at a time — ' + dropped + ' skipped.', 'error');

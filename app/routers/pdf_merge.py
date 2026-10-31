@@ -79,6 +79,9 @@ def _page_thumbnail(page: fitz.Page, matrix: fitz.Matrix) -> tuple:
 async def pdf_inspect(
     files: List[UploadFile] = File(...),
     thumb_dpi: int = Form(90),
+    # 0 = every page; otherwise only the first N pages get thumbnails (e.g. 1
+    # for a cover preview). page_count still reports the full document.
+    max_pages: int = Form(0),
 ):
     """Render low-res thumbnails for every page of every uploaded PDF, keyed by
     source_index so the frontend can build an editable page grid — and merge,
@@ -100,8 +103,11 @@ async def pdf_inspect(
             if total_pages > MAX_PAGES:
                 raise HTTPException(400, f"Combined page count exceeds the {MAX_PAGES}-page limit.")
 
+            page_count = doc.page_count
             pages = []
             for i, page in enumerate(doc):
+                if max_pages > 0 and i >= max_pages:
+                    break
                 width, height, data_url = _page_thumbnail(page, matrix)
                 pages.append(
                     {
@@ -119,7 +125,7 @@ async def pdf_inspect(
             {
                 "source_index": src_idx,
                 "filename": f.filename,
-                "page_count": len(pages),
+                "page_count": page_count,
                 "pages": pages,
             }
         )
